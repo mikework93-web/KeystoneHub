@@ -1754,7 +1754,7 @@ function spDraw(list,items,q,note,k){
   const r=curR(),c=r?ctxFromEl(r,list.parentElement.querySelector('input')):null,picked=new Set(((c&&c.d[k])||[]).map(x=>x.toLowerCase()));
   const inp=list.parentElement.querySelector('input'),A=inp.dataset.p?` data-p="${inp.dataset.p}" data-i="${inp.dataset.i}"`:'';
   let h=note?`<div class="sp-note">${esc(note)}</div>`:'';
-  h+=items.slice(0,60).map(s=>`<button type="button" class="sp-opt${picked.has(s.sci.toLowerCase())?' picked':''}" data-ra="spadd" data-k="${k}" data-v="${esc(s.sci)}"${A}><span class="cn">${esc(s.common||s.sci)}</span><span class="sci">${esc(s.sci)}</span><span class="badge ${s.type==='invasive'?'inv':'ind'}">${s.type==='invasive'?'Invasive':'Indigenous'}</span></button>`).join('');
+  h+=items.slice(0,60).map(s=>`<button type="button" class="sp-opt${picked.has(s.sci.toLowerCase())?' picked':''}" data-ra="spadd" data-k="${k}" data-v="${esc(s.sci)}"${A}><span class="cn">${esc(s.common||s.sci)}</span><span class="sci">${esc(s.sci)}</span></button>`).join('');
   const parts=String(inp.value||'').split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
   if(parts.length)h+=`<button type="button" class="sp-opt" data-spfree="${k}"${A}><span class="cn">Add ${parts.map(x=>'“'+esc(x)+'”').join(', ')}</span><span class="sci">${parts.length>1?parts.length+' names — separated by commas':'not in list — added as free text'}</span></button>`;
   list.innerHTML=h;list.classList.toggle('open',!!h);
