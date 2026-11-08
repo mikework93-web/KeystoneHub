@@ -1343,7 +1343,7 @@ function missingFields(r){
 function newReport(tid,occ){
   const t=TPL(tid),r={id:uid(),type:tid,created:Date.now(),updated:Date.now(),status:'draft',d:{},m:{},n:{},coverId:null};
   flat(t).forEach(it=>{
-    if(it.role==='when'||(it.t==='datetime'&&!r.d[it.k]&&!IDX[tid][it.k].rep&&/date|conducted|prepared on/i.test(it.label)))r.d[it.k]=nowLocal();
+    if(!IDX[tid][it.k].rep&&(it.t==='datetime'||it.t==='date'||it.role==='when'))r.d[it.k]=it.t==='date'?fmt(new Date()):nowLocal();
     if(it.def)r.d[it.k]=it.def;
     if(it.auto==='docno'){S.settings.jseaNo=(S.settings.jseaNo||0)+1;r.d[it.k]=String(S.settings.jseaNo).padStart(6,'0')}
     if(tid==='jsea'&&it.label&&/hazards \(addition/i.test(it.label))r.d[it.k]=['NONE'];
@@ -1502,7 +1502,7 @@ document.addEventListener('click',async e=>{
    case 'sprm':c.d[k]=(c.d[k]||[]).filter(x=>x!==v);touch(r);renderForm();break;
    case 'pick':c.d[k]=c.d[k]===v?'':v;touch(r);renderForm();break;
    case 'multi':{const arr=c.d[k]=c.d[k]||[],ix=arr.indexOf(v);ix<0?arr.push(v):arr.splice(ix,1);touch(r);renderForm()}break;
-   case 'repadd':{(r.d[k]=r.d[k]||[]).push({d:{},m:{},n:{}});touch(r);renderForm()}break;
+   case 'repadd':{const it0=flat(TPL(r.type)).find(x=>x.k===k),nr={d:{},m:{},n:{}};it0.items.forEach(ch=>{if(ch.t==='datetime')nr.d[ch.k]=nowLocal();if(ch.t==='date')nr.d[ch.k]=fmt(new Date())});(r.d[k]=r.d[k]||[]).push(nr);touch(r);renderForm()}break;
    case 'reprm':{const row=r.d[k][+t.dataset.i];Object.values(row.m||{}).flat().forEach(x=>fileDel(x.id));r.d[k].splice(+t.dataset.i,1);touch(r);renderForm()}break;
    case 'repcrew':{const it=flat(TPL(r.type)).find(x=>x.k===k),sk=it.items.find(x=>x.t==='staff1');const rows=r.d[k]=r.d[k]||[];
      const crew=flat(TPL(r.type)).filter(x=>x.role==='crew').flatMap(x=>r.d[x.k]||[]);
@@ -1594,22 +1594,28 @@ async function coverCanvas(src){
 }
 async function makePdf(r){
   const t=TPL(r.type),{jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4',compress:true});
-  const W=210,H=297,M=14,CW=W-2*M,TOP=24,BOT=H-17;
-  const CH=[74,74,74],DEEP=[51,51,49],GOLD=[204,167,53],INK=[42,42,40],MUTED=[107,106,99],LINE=[222,216,200],TINT=[239,233,214];
+  const W=210,H=297,M=20,CW=W-2*M,TOP=31,BOT=H-20;
+  const CH=[74,74,74],GOLD=[204,167,53],GOLDD=[169,134,42],INK=[42,42,40],MUTED=[110,109,102],LINE=[217,213,200],CREAM=[245,243,238],RED=[160,35,35];
   const logoSrc=$('header.app img').src,LR=640/170;
-  // gather photos in order
   const photos={};let order=[];
-  const gather=(c)=>Object.values(c.m||{}).flat().forEach(a=>order.push(a.id));
+  const gather=c=>Object.values(c.m||{}).flat().forEach(a=>order.push(a.id));
   gather(r);Object.values(r.d).forEach(v=>Array.isArray(v)&&v.forEach(row=>row&&row.m&&gather(row)));
   for(const id of order){const b=await fileGet(id);if(!b)continue;const data=await toDataURL(b);const im=await loadImg(data);photos[id]={data,w:im.naturalWidth,h:im.naturalHeight}}
-  const num={};order=order.filter(id=>photos[id]);order.forEach((id,i)=>num[id]=i+1);
-  let y=TOP;const site=subOf(r);
-  const header=()=>{doc.setFillColor(...CH);doc.rect(0,0,W,13,'F');doc.setFillColor(...GOLD);doc.rect(0,13,W,.8,'F');doc.addImage(logoSrc,'PNG',M,2,9*LR,9);
-    doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...GOLD);doc.text(pdfT(t.name+(site?'  |  '+site:'')).toUpperCase(),W-M,8,{align:'right'})};
-  const newPage=()=>{doc.addPage();header();y=TOP};
-  const need=h=>{if(y+h>BOT)newPage()};
+  order=order.filter(id=>photos[id]);const num={};order.forEach((id,i)=>num[id]=i+1);
+  const site=subOf(r),wh=whenOf(r),by=byOf(r);
+  const dateStr=wh?new Date(wh).toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'}):'';
+  let y=TOP,sn=0;
   const font=(s,fs,c=INK)=>{doc.setFont('helvetica',s);doc.setFontSize(fs);doc.setTextColor(...c)};
-  const lh=fs=>fs*.3528*1.38;
+  const lh=fs=>fs*.3528*1.42;
+  const header=()=>{
+    doc.setFillColor(...CH);doc.rect(M,8,CW,14,'F');doc.setFillColor(...GOLD);doc.rect(M,22,CW,.7,'F');
+    doc.addImage(logoSrc,'PNG',M+3,10,10*LR,10);
+    font('bold',8.5,GOLD);doc.text(pdfT(t.name+(site?'  |  '+site:'')).slice(0,70),W-M-3,13.8,{align:'right'});
+    font('normal',7.5,[235,232,222]);doc.text(pdfT([dateStr,by&&'Completed by '+by].filter(Boolean).join('  ·  ')),W-M-3,18.6,{align:'right'});
+  };
+  const newPage=()=>{doc.addPage();header();y=TOP;stripe=0};
+  const need=h=>{if(y+h>BOT)newPage()};
+  let stripe=0;
   if(t.cover){
     const cv=await coverCanvas(await pickCover(r));doc.addImage(cv,'JPEG',0,0,W,H,undefined,'FAST');
     doc.setFillColor(...CH);doc.rect(0,0,W,25.4,'F');doc.setFillColor(...GOLD);doc.rect(0,25.4,W,.75,'F');doc.addImage(logoSrc,'PNG',18.5,4.4,16.6*LR,16.6);
@@ -1617,81 +1623,89 @@ async function makePdf(r){
     doc.addPage();
   }
   header();
-  const sep=()=>{doc.setDrawColor(...LINE);doc.setLineWidth(.2);doc.line(M,y,W-M,y)};
-  const secBar=(tt,sub)=>{need(18);y+=3;doc.setFillColor(...(sub?[246,243,232]:TINT));doc.rect(M,y,CW,sub?7:8,'F');font('bold',sub?9.5:10.5,DEEP);const L=doc.splitTextToSize(pdfT(tt),CW-6);doc.text(L[0],M+3,y+(sub?4.8:5.4));y+=sub?10:11};
-  const kv=(label,val)=>{
-    font('bold',9.5);const L=doc.splitTextToSize(pdfT(label),92);font('normal',9.5);const Vv=doc.splitTextToSize(pdfT(val),82);
-    const n=Math.max(L.length,Vv.length),h=n*lh(9.5)+4;need(h);
-    font('bold',9.5);doc.text(L,M,y+4.2);font('normal',9.5);doc.text(Vv,W-M,y+4.2,{align:'right'});y+=h;sep()};
-  const STC={y:[0,163,108],n:[205,50,50],am:[217,150,30],na:[120,120,116]};
-  const ynRow=(label,val)=>{
-    font('bold',9.5);const L=doc.splitTextToSize(pdfT(label),CW*.52),h=Math.max(L.length*lh(9.5)+4,9);need(h);
-    const col=STC[YNCLS(val)];
-    font('bold',9.5);doc.text(L,M,y+Math.max(4.2,(h-L.length*lh(9.5))/2+3.4));
-    doc.setFillColor(...col);doc.rect(M+CW*.55,y+.4,CW*.45,h-.8,'F');font('normal',9.5,[255,255,255]);doc.text(pdfT(val),W-M-3,y+h/2+1.3,{align:'right'});y+=h;sep()};
-  const block=(label,text)=>{
-    font('bold',9.5);const L=doc.splitTextToSize(pdfT(label),CW);need(L.length*lh(9.5)+8+lh(9));font('bold',9.5);doc.text(L,M,y+4.2);y+=L.length*lh(9.5)+3.4;
-    font('normal',9.2,[50,50,48]);const P=doc.splitTextToSize(pdfT(text),CW);
-    for(const ln of P){need(lh(9.2));doc.text(ln,M,y+3.4);y+=lh(9.2)}y+=2.5;sep()};
-  const chips=(label,items)=>{
-    font('bold',9.5);doc.text(pdfT(label),M,y+4.2);y+=7;font('normal',8.5);let x=M;const ch=7.2;need(ch+3);
-    for(const it of items){const tt=pdfT(it),w=doc.getTextWidth(tt)+7;if(x+w>W-M){x=M;y+=ch+1.6;need(ch+3)}doc.setFillColor(...CH);doc.rect(x,y,w,ch,'F');doc.setTextColor(255,255,255);doc.text(tt,x+3.5,y+4.9);x+=w+1.6}
-    y+=ch+3;sep()};
-  const para=(txt,fs=8.6,col=MUTED)=>{font('normal',fs,col);const P=doc.splitTextToSize(pdfT(txt),CW);for(const ln of P){need(lh(fs));doc.text(ln,M,y+3.2);y+=lh(fs)}y+=2};
-  const notePdf=(c,k)=>{const n=(c.n||{})[k];if(n&&n.trim())para('Note: '+n,8.8)};
-  const photoFlow=(ids,bw,bh)=>{
-    const list=ids.filter(id=>photos[id]);if(!list.length)return;
-    let x=M,rowH=0;y+=2;
-    for(const id of list){
-      const p=photos[id],s=Math.min(bw/p.w,bh/p.h),w=p.w*s,h=p.h*s;
-      if(x+w>W-M+.1){x=M;y+=rowH+2;rowH=0}
-      if(y+h+6>BOT){newPage();x=M;rowH=0}
-      doc.addImage(p.data,'JPEG',x,y,w,h,undefined,'FAST');font('normal',7.5,MUTED);doc.text('Photo '+num[id],x,y+h+3.4);
-      x+=bw+4;rowH=Math.max(rowH,h+6);
+  // ---- primitives
+  const heading=(txt)=>{sn++;need(22);y+=5;const n=sn+'.0';font('bold',13,GOLD);doc.text(n,M,y+4.5);font('bold',13,CH);
+    const L=doc.splitTextToSize(pdfT(txt),CW-14);doc.text(L[0],M+13,y+4.5);y+=7.5;doc.setDrawColor(...LINE);doc.setLineWidth(.25);doc.line(M,y,W-M,y);y+=3;stripe=0};
+  const sub=(txt)=>{need(14);y+=3;font('bold',10,GOLDD);const L=doc.splitTextToSize(pdfT(txt),CW);doc.text(L,M,y+3.5);y+=L.length*lh(10)+1.5;stripe=0};
+  const LW=CW*.46;
+  const row=(label,val,opt={})=>{
+    font('bold',9);const L=doc.splitTextToSize(pdfT(label),LW-5);
+    font(opt.bold?'bold':'normal',9.2,opt.color||INK);const V=doc.splitTextToSize(pdfT(val),CW-LW-5);
+    const n=Math.max(L.length,V.length),h=n*lh(9.2)+3.4;need(h);
+    if(stripe%2===0){doc.setFillColor(...CREAM);doc.rect(M,y,CW,h,'F')}
+    doc.setDrawColor(...LINE);doc.setLineWidth(.15);doc.line(M,y+h,W-M,y+h);
+    font('bold',9,INK);doc.text(L,M+2.5,y+4.3);font(opt.bold?'bold':'normal',9.2,opt.color||INK);doc.text(V,M+LW+2.5,y+4.3);y+=h;stripe++};
+  const prose=(label,text)=>{
+    sub(label.replace(/:$/,''));font('normal',9.6,[48,48,46]);const P=doc.splitTextToSize(pdfT(text),CW);
+    for(const ln of P){need(lh(9.6));doc.text(ln,M,y+3.6);y+=lh(9.6)}y+=2;stripe=0};
+  const note=(txt)=>{font('normal',8.6,MUTED);const P=doc.splitTextToSize(pdfT(txt),CW-4);need(P.length*lh(8.6)+2);doc.setFillColor(...GOLD);doc.rect(M,y+.5,.8,P.length*lh(8.6)+.5,'F');
+    for(const ln of P){doc.text(ln,M+3,y+3.4);y+=lh(8.6)}y+=2.5;stripe=0};
+  const figs=(items)=>{
+    const list=items.filter(f=>photos[f.id]);if(!list.length)return;
+    const bw=(CW-6)/2,bh=82;let col=0,rowH=0,x0=M;y+=2;
+    for(const f of list){
+      const p=photos[f.id],s=Math.min(bw/p.w,bh/p.h),w=p.w*s,h=p.h*s;
+      if(col===2){col=0;y+=rowH+2;rowH=0}
+      if(y+h+9>BOT){newPage();col=0;rowH=0}
+      const x=M+col*(bw+6);doc.addImage(p.data,'JPEG',x,y,w,h,undefined,'FAST');
+      font('normal',7.8,MUTED);const cap=doc.splitTextToSize(pdfT('Photo '+num[f.id]+'. '+f.cap),bw);doc.text(cap.slice(0,2),x,y+h+3.4);
+      rowH=Math.max(rowH,h+3.4+cap.slice(0,2).length*3.1+1);col++;
     }
-    y+=rowH+1;sep()};
-  const sigPdf=(label,sg)=>{if(!(sg&&sg.img))return;need(30);font('bold',9.5);doc.text(pdfT(label||'Signature'),M,y+4.2);y+=7;doc.addImage(sg.img,'PNG',M,y,56,17.5);y+=18.5;font('normal',8.3,MUTED);doc.text(fmtTS(sg.ts),W-M,y,{align:'right'});y+=3;sep()};
-  // title block
+    y+=rowH+3;stripe=0};
+  const sigPdf=(label,sg,nm)=>{if(!(sg&&sg.img))return;need(32);sub(label||'Signature');doc.addImage(sg.img,'PNG',M,y,52,16);y+=16.5;doc.setDrawColor(...INK);doc.setLineWidth(.2);doc.line(M,y,M+60,y);y+=3.6;
+    font('normal',8.3,MUTED);doc.text(pdfT([nm,fmtTS(sg.ts)].filter(Boolean).join('  ·  ')),M,y);y+=4;stripe=0};
+  // ---- title block
   const titleItem=flat(t).find(x=>x.pdf==='title');
   const tTitle=(titleItem&&r.d[titleItem.k])||t.name;
-  font('bold',19,INK);{const L=doc.splitTextToSize(pdfT(tTitle),CW-28);doc.text(L[0],M,y+6)}y+=10;
-  const wh=whenOf(r),by=byOf(r);
-  const sub=t.cover?site:[site,by,wh?new Date(wh).toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}):''].filter(Boolean).join(' / ');
-  font('normal',11.5,MUTED);doc.text(pdfT(sub).slice(0,80),M,y+4.5);font('bold',8.5,r.status==='complete'?[0,140,90]:[170,130,20]);doc.text(r.status==='complete'?'Complete':'Draft',W-M,y+4.5,{align:'right'});y+=8;
-  doc.setFillColor(...GOLD);doc.rect(M,y,CW,.8,'F');y+=4;
-  // body
+  font('bold',22,CH);{const L=doc.splitTextToSize(pdfT(tTitle),CW);doc.text(L[0],M,y+7);}y+=11;
+  font('normal',11,MUTED);doc.text(pdfT([site,dateStr].filter(Boolean).join('   |   ')).slice(0,90),M,y+3.5);y+=6;
+  doc.setFillColor(...GOLD);doc.rect(M,y,18,.8,'F');y+=2;
+  if(r.status!=='complete'){font('bold',8,GOLDD);doc.text('DRAFT',W-M,y-4,{align:'right'})}
+  // ---- body
   const label=it=>(it.label||'').trim();
+  const joinv=v=>Array.isArray(v)?v.join(', '):String(v);
   const emit=(it,c,tid)=>{
-    if(it.pdf===false||it.pdf==='title')return;
-    if(!isVis(r,c,tid,it))return;
-    const v=c.d[it.k],ids=((c.m||{})[it.k]||[]).map(a=>a.id);
+    if(it.pdf===false||it.pdf==='title')return;if(!isVis(r,c,tid,it))return;
+    const v=c.d[it.k],fl=((c.m||{})[it.k]||[]).map(a=>({id:a.id,cap:label(it).replace(/:$/,'')}));
+    const nt=((c.n||{})[it.k]||'').trim();
     switch(it.t){
-     case 'info':if(/^(i,? the undersigned|i certify|i hereby)/i.test(it.text||''))para(it.text);return;
-     case 'repeat':{const rows=r.d[it.k]||[];rows.forEach((row,i)=>{secBar((label(it)||'Entry').replace(/:$/,'')+' '+(rows.length>1?(i+1):''),true);it.items.forEach(ch=>emit(ch,row,tid))});return}
-     case 'text':if(String(v||'').trim()){(it.area||String(v).length>60||String(v).includes('\n'))?block(label(it),v):kv(label(it),v)}break;
-     case 'number':if(v!==undefined&&v!=='')kv(label(it),v);break;
-     case 'datetime':if(v)kv(label(it),fmtDT(v));break;
-     case 'date':if(v)kv(label(it),v);break;
-     case 'client':break;
-     case 'staff1':if(v)kv(label(it),staffName(v));break;
-     case 'staffN':if((v||[]).length)chips(label(it),v.map(staffName));break;
-     case 'select':if(v){const o=optsOf(it);(it.yn||/^(yes|no|n\/a|compliant|non-compliant|improvement)/i.test(v))&&o.length<=4&&o.some(x=>/^(yes|no|n\/a|compliant)/i.test(x))?ynRow(label(it),v):kv(label(it),v)}break;
-     case 'multi':case 'species':if((v||[]).length)chips(label(it),v);break;
-     case 'check':if(v)kv(label(it),'Yes');break;
-     case 'risk':if(v&&v.l&&v.c)kv(label(it),riskText(v));break;
-     case 'sign':sigPdf(label(it)||'Signature',v);break;
-     case 'media':if(ids.length){font('bold',9.5);need(8);doc.text(pdfT(label(it)),M,y+4.2);y+=4.5}break;
+     case 'info':if(/^(i,? the undersigned|i certify|i hereby)/i.test(it.text||''))note(it.text);return;
+     case 'repeat':{const rows=(r.d[it.k]||[]).filter(rw=>it.items.some(ch=>hasC(ch,rw)&&ch.t!=='datetime'&&ch.t!=='date')),nm=(label(it)||'Entry').replace(/:$/,'');rows.forEach((rw,i)=>{sub(nm+(rows.length>1?' '+(i+1):''));it.items.forEach(ch=>emit(ch,rw,tid));stripe=0});return}
+     case 'text':if(String(v||'').trim()){(it.area||String(v).length>70||String(v).includes('\n'))?prose(label(it),v):row(label(it),v)}break;
+     case 'number':if(v!==undefined&&v!=='')row(label(it),v);break;
+     case 'datetime':if(v)row(label(it),fmtDT(v));break;
+     case 'date':if(v)row(label(it),v);break;
+     case 'staff1':if(v)row(label(it),staffName(v));break;
+     case 'staffN':if((v||[]).length)row(label(it),v.map(staffName).join(', '));break;
+     case 'select':if(v)row(label(it),v,/^(no|non-compliant)$/i.test(v)?{bold:true,color:RED}:/improvement/i.test(v)?{bold:true,color:GOLDD}:{});break;
+     case 'multi':case 'species':if((v||[]).length)row(label(it),joinv(v));break;
+     case 'check':if(v)row(label(it),'Yes');break;
+     case 'risk':if(v&&v.l&&v.c)row(label(it),riskText(v));break;
+     case 'sign':sigPdf(label(it)||'Signature',v,'');break;
+     case 'media':if(fl.length)sub(label(it).replace(/:$/,''));break;
     }
-    if(!['info','repeat','client','sign'].includes(it.t)){notePdf(c,it.k);photoFlow(ids,52,66)}
+    if(!['info','repeat','client','sign'].includes(it.t)){if(nt){stripe=0;note(nt)}figs(fl)}
   };
-  for(const s of t.sections){
-    const has=s.items.some(it=>isVis(r,r,t.id,it)&&it.t!=='info');
-    if(s.title&&has)secBar(s.title);
-    for(const it of s.items)emit(it,r,t.id);
-  }
-  if(order.length){secBar('Media summary');photoFlow(order,84,108)}
-  const total=doc.getNumberOfPages(),first=t.cover?2:1;
-  for(let p=first;p<=total;p++){doc.setPage(p);font('normal',8,MUTED);doc.text('Private & confidential',M,H-8);doc.text(`${p-first+1}/${total-first+1}`,W-M,H-8,{align:'right'})}
+  const hasC=(it,c)=>{
+    if(it.pdf===false||it.pdf==='title'||it.t==='info'||it.t==='client')return false;if(!isVis(r,c,t.id,it))return false;
+    if(it.t==='repeat')return (r.d[it.k]||[]).some(rw=>it.items.some(ch=>hasC(ch,rw)&&ch.t!=='datetime'&&ch.t!=='date'));
+    if(((c.m||{})[it.k]||[]).some(a=>photos[a.id]))return true;
+    if((((c.n||{})[it.k])||'').trim())return true;
+    if(it.t==='check')return !!c.d[it.k];
+    return !emptyVal(it,c)};
+  const first=t.sections.findIndex(s=>s.items.some(it=>hasC(it,r)&&!(it.t==='datetime'||it.t==='date'||it.auto)));
+  t.sections.forEach((s,si)=>{
+    const has=s.items.some(it=>hasC(it,r)&&!(it.t==='datetime'||it.t==='date'||it.auto)||it.t==='repeat'&&hasC(it,r));
+    if(!has)return;
+    const title=s.title||(si===first?'Details':'');
+    if(title)heading(title.replace(/:$/,''));
+    s.items.forEach(it=>emit(it,r,t.id));
+  });
+  if(order.length){heading('Photo record');
+    const all=[];const walk=(c,items)=>items.forEach(it=>{if(!isVis(r,c,t.id,it))return;if(it.t==='repeat'){(r.d[it.k]||[]).forEach(rw=>walk(rw,it.items))}else((c.m||{})[it.k]||[]).forEach(a=>all.push({id:a.id,cap:label(it).replace(/:$/,'')}))});
+    t.sections.forEach(s=>walk(r,s.items));figs(all)}
+  const total=doc.getNumberOfPages(),firstP=t.cover?2:1;
+  for(let p=firstP;p<=total;p++){doc.setPage(p);font('normal',7.8,MUTED);doc.text(pdfT(`Keystone Conservation Pty Ltd  |  ${t.name}${site?' – '+site:''}  |  Page ${p-firstP+1}`),M,H-10)}
   return doc.output('blob');
 }
 async function exportPdf(r){
