@@ -2569,7 +2569,8 @@ function loadSeed(){
   save();UI.con.month=mk;render();toast(`Loaded ${added} new and ${upd} existing contracts, plus the November workflow`)}
 
 /* ---------- invoices → to-do for Michael Sommer (one invoice per PO, summing every site on that PO) ---------- */
-const gstF=c=>c.gst?1.1:1;
+const hasGst=c=>!!c.gst&&!c.pia&&!/knox/i.test(c.client||'');
+const gstF=c=>hasGst(c)?1.1:1;
 const groupOf=c=>c.po?S.contracts.filter(x=>norm(x.po)===norm(c.po)):[c];
 const gKey=c=>c.po?'po:'+norm(c.po):c.id;
 const gTitle=c=>{const g=groupOf(c);if(g.length<2)return cName(c);return (g.find(x=>x.gname)||{}).gname||('PO '+c.po)};
@@ -2595,9 +2596,9 @@ function syncInvoice(c,mk){
   if(c.pia){syncReportTask(c,mk);return}
   const t=grpTotals(c,mk),k=invKey(c,mk),d=doneAmt(k,t.hist),open=S.tasks.find(x=>x.inv&&x.inv.k===k&&!x.done),un=r2(t.a-d);
   if(un<=0.005){if(open){S.tasks=S.tasks.filter(x=>x!==open);save()}return}
-  const live=t.g.filter(x=>!x.pia),flag=live.every(x=>x.gst)?' inc GST':live.some(x=>x.gst)?' (GST on some lines)':'';
+  const live=t.g.filter(x=>!x.pia),flag=live.every(hasGst)?' inc GST':live.some(hasGst)?' (GST on some lines)':'';
   const title=`Invoice ${gTitle(c)}${c.po&&!/^PO /.test(gTitle(c))?' ('+c.po+')':''} – ${mLabel(mk)} – ${money(un)}${flag}`;
-  const lines=live.map(x=>{const h=hoursIn(x,mk),o=otherIn(x.id,mk);return (h||o)?`${cName(x)}: ${hr(h)} hrs × ${money(num(x.rate))}/hr = ${money(h*num(x.rate))}${o?' + other '+money(o):''}${x.gst?' + GST':''}`:''}).filter(Boolean);
+  const lines=live.map(x=>{const h=hoursIn(x,mk),o=otherIn(x.id,mk);return (h||o)?`${cName(x)}: ${hr(h)} hrs × ${money(num(x.rate))}/hr = ${money(h*num(x.rate))}${o?' + other '+money(o):''}${hasGst(x)?' + GST':''}`:''}).filter(Boolean);
   const notes=[(t.g.find(x=>x.narr)||{}).narr||'',...lines,d>t.hist+0.005?`Already invoiced earlier this month: ${money(d)}. This invoice: ${money(un)}.`:`Total ${money(un)}${flag}.`].filter(Boolean).join('\n');
   if(open){open.title=title;open.notes=notes;open.inv={k,a:t.a,h:t.h,o:0}}
   else{const mike=S.staff.find(s=>/michael sommer/i.test(s.name))||S.staff.find(s=>/sommer/i.test(s.name));
@@ -2688,11 +2689,11 @@ function contractSheet(cid){
   const cells=f.map(m=>{const s=invState(c,m),amt=invAmt(c,m);if(!c.pia){invT+=s.st==='done'?amt:0;exT+=hoursIn(c,m)*num(c.rate)+otherIn(c.id,m)}othT+=otherIn(c.id,m);
     return `<td class="${s.st==='done'?'inv-g':'inv-k'}">${s.st==='none'||s.st==='pia'||!amt?'–':money(amt)}</td>`});
   sheet(`<div class="sh-hd"><h2 style="font-size:16px">${esc(cName(c))}</h2><button class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div><div class="sh-bd">
-   <div class="hint" style="margin-top:0">${c.po?'PO '+esc(c.po)+' · ':''}${esc(c.client||'')}${c.client?' · ':''}${c.pia?'Paid in advance (not invoiced – a “Send report” to-do is created)':`$${num(c.rate).toFixed(2)}/hr ${c.gst?'+ GST':'(no GST)'}`}${(c.aliases||[]).length?'<br>Also known as: '+esc(c.aliases.join(', ')):''}${groupOf(c).length>1?'<br>Shares PO with: '+esc(groupOf(c).filter(x=>x!==c).map(cName).join(', '))+' (one invoice per month covers all sites on this PO; each site has its own hours)':''}</div>
+   <div class="hint" style="margin-top:0">${c.po?'PO '+esc(c.po)+' · ':''}${esc(c.client||'')}${c.client?' · ':''}${c.pia?'Paid in advance (not invoiced – a “Send report” to-do is created)':`$${num(c.rate).toFixed(2)}/hr ${hasGst(c)?'+ GST':'(no GST)'}`}${(c.aliases||[]).length?'<br>Also known as: '+esc(c.aliases.join(', ')):''}${groupOf(c).length>1?'<br>Shares PO with: '+esc(groupOf(c).filter(x=>x!==c).map(cName).join(', '))+' (one invoice per month covers all sites on this PO; each site has its own hours)':''}</div>
    <div class="mgw"><table class="mg"><thead><tr><th></th>${f.map((m,i)=>`<th>${MN[i]}</th>`).join('')}<th>Total</th></tr></thead><tbody>
     <tr><td>Quoted hrs</td>${rowH.join('')}<td><b>${hr(q)}</b></td></tr>
     <tr><td>Spent hrs</td>${f.map(m=>`<td>${hr(hoursIn(c,m))}</td>`).join('')}<td><b>${hr(sp)}</b></td></tr>
-    <tr><td>Invoice ${c.gst?'inc GST':''}</td>${cells.join('')}<td><b>${c.pia?'–':money(invT)}</b></td></tr>
+    <tr><td>Invoice ${hasGst(c)?'inc GST':''}</td>${cells.join('')}<td><b>${c.pia?'–':money(invT)}</b></td></tr>
     <tr><td>Other $ (ex GST)</td>${f.map(m=>`<td>${edit&&!c.pia?`<input type="number" step="0.01" value="${otherIn(c.id,m)||''}" data-cn-in="o" data-c="${c.id}" data-m="${m}">`:(otherIn(c.id,m)||'–')}</td>`).join('')}<td><b>${money(othT)}</b></td></tr>
     <tr><td>Available hrs</td>${f.map((m,i)=>`<td>${hr(availAfter(c,i))}</td>`).join('')}<td></td></tr></tbody></table></div>
    <div class="hint">Remaining hours: <b>${hr(q-sp)}</b>${num(c.value)?` · Contract value ${money(num(c.value))} · Remaining ${money(num(c.value)-exT)} (ex GST)`:''}. Green = invoice ticked off in To Do; black = still to invoice.</div>
@@ -2715,7 +2716,7 @@ function contractEditSheet(cid){
    <div class="grid3"><div class="fld"><label>PO (blank if none)</label><input id="ce-po" value="${esc(c.po)}"></div><div class="fld"><label>Client</label><input id="ce-client" value="${esc(c.client||'')}"></div><div class="fld"><label>Rate $/hr (ex GST)</label><input id="ce-rate" type="number" step="0.01" value="${num(c.rate)||''}"></div></div>
    <div class="fld"><label>PO group name (only if several sites share this PO)</label><input id="ce-gname" value="${esc(c.gname||'')}"></div>
    <div class="fld"><label>Other names (workflow / schedule shorthand), separated by ;</label><input id="ce-alias" value="${esc((c.aliases||[]).join('; '))}"></div>
-   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><label><input type="checkbox" id="ce-gst" ${c.gst?'checked':''}> GST applies</label><label><input type="checkbox" id="ce-pia" ${c.pia?'checked':''}> Paid in advance (send report, no invoice)</label></div>
+   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><label><input type="checkbox" id="ce-gst" ${hasGst(c)?'checked':''}> GST applies (never for Knox or paid-in-advance)</label><label><input type="checkbox" id="ce-pia" ${c.pia?'checked':''}> Paid in advance (send report, no invoice)</label></div>
    <div class="fld"><label>Contract value $ (ex GST)</label><input id="ce-val" type="number" step="0.01" value="${num(c.value)||''}"></div>
    <div class="fld"><span class="lbl">Quoted hours by month (Jul–Jun)</span>${grid('ce-q',c.q)}</div>
    <div class="fld"><span class="lbl">Hours spent before the app was used (Jul–Jun)</span>${grid('ce-s',c.sp)}</div>
