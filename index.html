@@ -840,7 +840,8 @@ try{const t=localStorage.getItem('ks_tab');if(['todo','schedule','report','contr
 const memBlobs=new Map();let _db=null;
 function idb(){return _db||(_db=new Promise((res,rej)=>{try{const r=indexedDB.open('ks_ops_files',1);r.onupgradeneeded=()=>r.result.createObjectStore('f');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}}))}
 async function filePut(id,blob){memBlobs.set(id,blob);try{const d=await idb();await new Promise((res,rej)=>{const t=d.transaction('f','readwrite');t.objectStore('f').put(blob,id);t.oncomplete=res;t.onerror=()=>rej(t.error)})}catch(e){}}
-async function fileGet(id){if(memBlobs.has(id))return memBlobs.get(id);try{const d=await idb();return await new Promise((res,rej)=>{const r=d.transaction('f').objectStore('f').get(id);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}catch(e){return null}}
+async function fileGet(id){const b=await fileGetLocal(id);if(b)return b;return (typeof odFetchFile==='function'?await odFetchFile(id):null)}
+async function fileGetLocal(id){if(memBlobs.has(id))return memBlobs.get(id);try{const d=await idb();return await new Promise((res,rej)=>{const r=d.transaction('f').objectStore('f').get(id);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}catch(e){return null}}
 async function fileDel(id){memBlobs.delete(id);try{const d=await idb();d.transaction('f','readwrite').objectStore('f').delete(id)}catch(e){}}
 function gcFiles(candidates){const used=new Set();[...S.jobs,...S.templates].forEach(x=>(x.att||[]).forEach(a=>used.add(a.id)));candidates.forEach(a=>{if(!used.has(a.id))fileDel(a.id)})}
 
@@ -2263,7 +2264,7 @@ async function odSync(manual){
   try{
     const {items,files}=odCollect();
     for(const it of items){const h=hash(it.json);if(st.done[it.path]===h)continue;await odPut(it.path,jblob(JSON.parse(it.json)));st.done[it.path]=h;up++;odStatus('Backing up… '+up)}
-    for(const [id,name] of Object.entries(files)){if(st.done['f:'+id])continue;const b=await fileGet(id);if(!b)continue;await odPut(`files/${id}__${safeN(name)}`,b);st.done['f:'+id]=1;up++;odStatus('Backing up… '+up)}
+    for(const [id,name] of Object.entries(files)){if(st.done['f:'+id])continue;const b=await fileGetLocal(id);if(!b)continue;await odPut(`files/${id}__${safeN(name)}`,b);st.done['f:'+id]=1;up++;odStatus('Backing up… '+up)}
     for(const r of S.reports){if(r.type!=='works'||r.status!=='complete')continue;const k='pdf:'+r.id+':'+(r.completedAt||0);if(st.done[k])continue;await odPut(worksPdfPath(r),await makePdf(r));st.done[k]=1;up++;odStatus('Backing up… '+up)}
     st.last=Date.now();st.n=(st.n||0)+up;lss('ks_od_state',st);if(manual)toast(up?`Backed up ${up} item${up>1?'s':''} to OneDrive`:'OneDrive is already up to date');
   }catch(e){st.err=String(e.message||e);lss('ks_od_state',st);if(manual)toast('OneDrive: '+st.err,true)}
@@ -2291,7 +2292,7 @@ async function odRecover(){
         for(const rf of await odList('data/'+key)){if(!/\.json$/.test(rf.name))continue;const rec=await (await odGet(rf)).json();if(rec&&rec.id&&!have.has(rec.id)){S[key].push(rec);have.add(rec.id);restored.push(rec);added++}}}
     }
     save();
-    const need=odCollect().files,miss=[];for(const id of Object.keys(need))if(!(await fileGet(id)))miss.push(id);
+    const need=odCollect().files,miss=[];for(const id of Object.keys(need))if(!(await fileGetLocal(id)))miss.push(id);
     if(miss.length){const list=await odList('files');for(const id of miss){const f=list.find(x=>x.name.startsWith(id+'__'));if(f){await filePut(id,await (await odGet(f)).blob());filesGot++}}}
     render();toast(`Recovered ${added} record${added===1?'':'s'} and ${filesGot} file${filesGot===1?'':'s'}`);
   }catch(e){toast('Recover failed: '+(e.message||e),true)}
@@ -2299,7 +2300,7 @@ async function odRecover(){
 async function odDownloadAll(){
   try{
     toast('Building backup file…');const {files}=odCollect(),fl=[{name:'data.json',data:u8(JSON.stringify(S))}];
-    for(const [id,name] of Object.entries(files)){const b=await fileGet(id);if(b)fl.push({name:`files/${id}__${safeN(name)}`,data:new Uint8Array(await b.arrayBuffer())})}
+    for(const [id,name] of Object.entries(files)){const b=await fileGetLocal(id);if(b)fl.push({name:`files/${id}__${safeN(name)}`,data:new Uint8Array(await b.arrayBuffer())})}
     const blob=zipStore(fl,'application/zip'),nm=`Keystone Ops backup ${new Date().toISOString().slice(0,10)}.zip`,url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=nm;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);toast('Backup file ready — '+nm);
   }catch(e){toast('Backup failed: '+(e.message||e),true)}
@@ -2331,6 +2332,21 @@ document.addEventListener('click',async e=>{
   if(a==='disc'){const c=await askChoice('Disconnect OneDrive','This device will stop backing up. Nothing in OneDrive is deleted.',[{v:'ok',t:'Disconnect',cls:'danger'}]);if(c==='ok'){try{localStorage.removeItem('ks_od_tok')}catch(_){}odSheet()}}
 });
 odHandleRedirect();if(odConnected())setTimeout(()=>odSync(false),4000);
+
+/* ---- attachments follow the jobs between phones ---- */
+const odFileName=(id,name)=>`files/${id}__${safeN(name)}`;
+async function odPushFile(id,name){
+  const st=odState();if(st.done['f:'+id])return;const b=await fileGetLocal(id);if(!b)return;
+  await odPut(odFileName(id,name),b);const s2=odState();s2.done['f:'+id]=1;lss('ks_od_state',s2)}
+const odFetching={};
+async function odFetchFile(id){
+  if(!odConnected()||!navigator.onLine)return null;if(odFetching[id])return odFetching[id];
+  return odFetching[id]=(async()=>{try{
+    const name=odCollect().files[id];if(name===undefined)return null;
+    const r=await odFetch(`${OD_G}:/${odEnc(odFileName(id,name))}?$select=name,@microsoft.graph.downloadUrl`);if(!r.ok)return null;
+    const j=await r.json(),u=j['@microsoft.graph.downloadUrl'];if(!u)return null;
+    const d=await fetch(u);if(!d.ok)return null;const blob=await d.blob();await filePut(id,blob);return blob;
+  }catch(e){return null}finally{delete odFetching[id]}})()}
 
 /* =====================================================================
    Staff sign-in (pick-from-list, no password), to-do badge, auto-fill,
@@ -2448,7 +2464,7 @@ UI.con=UI.con||{tab:'workflow',month:curMonth(),date:yesterday(),extra:[],q:''};
 /* ---------- lookup ---------- */
 const contractById=id=>S.contracts.find(c=>c.id===id);
 function findContract(name){const n=norm(name);if(!n)return null;
-  return S.contracts.find(c=>norm(c.po)===n)||S.contracts.find(c=>norm(c.name)===n)||S.contracts.find(c=>(c.aliases||[]).some(a=>norm(a)===n))||null}
+  const po=S.contracts.filter(c=>norm(c.po)===n);return (po.length===1?po[0]:null)||S.contracts.find(c=>norm(c.name)===n)||S.contracts.find(c=>(c.aliases||[]).some(a=>norm(a)===n))||null}
 function resolveJob(job){
   if(job.cid){const c=contractById(job.cid);if(c)return c}
   if(job.cname)return findContract(job.cname);
@@ -2474,25 +2490,40 @@ function setOther(cid,mk,amt){const id='o_'+cid+'_'+mk;let e=S.other.find(x=>x.i
 function budgetFor(c,mk){const f=FYM(),i=f.indexOf(mk);if(i<0)return 0;let q=0,s=0;for(let k=0;k<=i;k++)q+=num((c.q||[])[k]);for(let k=0;k<i;k++)s+=hoursIn(c,f[k]);return Math.max(0,r2(q-s))}
 function availAfter(c,i){const f=FYM();let a=0;for(let k=0;k<=i;k++)a+=num((c.q||[])[k])-hoursIn(c,f[k]);return r2(a)}
 
-/* ---------- invoices → to-do for Michael Sommer ---------- */
+/* ---------- invoices → to-do for Michael Sommer (one invoice per PO, summing every site on that PO) ---------- */
 const gstF=c=>c.gst?1.1:1;
-const invTotals=(c,mk)=>{const h=hoursIn(c,mk),o=otherIn(c.id,mk);return {h,o,amt:r2((h*num(c.rate)+o)*gstF(c))}};
-const invKey=(c,mk)=>c.id+'|'+mk;
+const groupOf=c=>c.po?S.contracts.filter(x=>norm(x.po)===norm(c.po)):[c];
+const gKey=c=>c.po?'po:'+norm(c.po):c.id;
+const gTitle=c=>{const g=groupOf(c);if(g.length<2)return cName(c);return (g.find(x=>x.gname)||{}).gname||('PO '+c.po)};
+const invKey=(c,mk)=>gKey(c)+'|'+mk;
 const histOf=(c,mk)=>{const i=FYM().indexOf(mk);return i>=0?num((c.sp||[])[i]):0};
+const invAmt=(x,mk)=>x.pia?0:(hoursIn(x,mk)*num(x.rate)+otherIn(x.id,mk))*gstF(x);
+function grpTotals(c,mk){const g=groupOf(c);let a=0,hist=0,h=0;for(const x of g){if(x.pia)continue;a+=invAmt(x,mk);hist+=histOf(x,mk)*num(x.rate)*gstF(x);h+=hoursIn(x,mk)}return {a:r2(a),hist:r2(hist),h:r2(h),g}}
 function doneOf(k,base){let h=num(base),o=0;for(const t of S.tasks)if(t.inv&&t.inv.k===k&&t.done){h=Math.max(h,num(t.inv.h));o=Math.max(o,num(t.inv.o))}return {h,o}}
+function doneAmt(k,base){let a=num(base);for(const t of S.tasks)if(t.inv&&t.inv.k===k&&t.done)a=Math.max(a,num(t.inv.a));return a}
 function invState(c,mk){
-  if(c.pia)return {st:'pia',amt:0};const t=invTotals(c,mk);if(t.h+t.o<=0)return {st:'none',amt:0};
-  const d=doneOf(invKey(c,mk),histOf(c,mk));return {st:(d.h>=t.h-1e-9&&d.o>=t.o-1e-9)?'done':'todo',amt:t.amt}}
-function syncInvoice(c,mk){
-  if(c.pia||!(num(c.rate)>0))return;const k=invKey(c,mk),t=invTotals(c,mk),d=doneOf(k,histOf(c,mk)),open=S.tasks.find(x=>x.inv&&x.inv.k===k&&!x.done);
-  const uh=r2(t.h-d.h),uo=r2(t.o-d.o);
-  if(uh<=1e-9&&uo<=1e-9){if(open){S.tasks=S.tasks.filter(x=>x!==open);save()}return}
-  const amt=r2((uh*num(c.rate)+uo)*gstF(c));
-  const title=`Invoice ${c.name}${c.po?' ('+c.po+')':''} – ${mLabel(mk)} – ${money(amt)}${c.gst?' inc GST':''}`;
-  const notes=[c.narr||'',`Hours: ${hr(uh)} × ${money(num(c.rate))}/hr = ${money(uh*num(c.rate))}`,uo?`Other (materials/hire etc.): ${money(uo)}`:'',c.gst?`GST 10% included. Total ${money(amt)}`:`No GST. Total ${money(amt)}`].filter(Boolean).join('\n');
-  if(open){open.title=title;open.notes=notes;open.inv={k,h:t.h,o:t.o}}
+  if(c.pia)return {st:'pia',amt:0};const t=grpTotals(c,mk);if(t.a<=0.005)return {st:'none',amt:0};
+  const d=doneAmt(invKey(c,mk),t.hist),un=r2(t.a-d);return {st:un<=0.005?'done':'todo',amt:un,tot:t.a}}
+const siteUnbilled=(c,mk)=>{const s=invState(c,mk);if(s.st!=='todo')return 0;const t=s.tot||1;return r2(invAmt(c,mk)/t*s.amt)};
+function syncReportTask(c,mk){
+  const k='rep|'+invKey(c,mk),h=hoursIn(c,mk),d=doneOf(k,histOf(c,mk)),open=S.tasks.find(x=>x.inv&&x.inv.k===k&&!x.done);
+  if(h-d.h<=1e-9){if(open){S.tasks=S.tasks.filter(x=>x!==open);save()}return}
+  const title=`Send ${cName(c)} report – ${mLabel(mk)}`,notes=[c.po?'PO '+c.po:'',c.narr||'',`Paid in advance – not invoiced. Hours this month: ${hr(h)}${d.h?' ('+hr(h-d.h)+' since the last report)':''}.`].filter(Boolean).join('\n');
+  if(open){open.title=title;open.notes=notes;open.inv={k,h,o:0}}
   else{const mike=S.staff.find(s=>/michael sommer/i.test(s.name))||S.staff.find(s=>/sommer/i.test(s.name));
-    S.tasks.unshift({id:uid(),title,list:listIdByName('Invoices'),staff:[mike?mike.id:staffIdByName('Michael Sommer')],due:today(),important:false,myday:'',done:false,notes,steps:[],repeat:'',created:today(),inv:{k,h:t.h,o:t.o}})}
+    S.tasks.unshift({id:uid(),title,list:listIdByName('Reports to send'),staff:[mike?mike.id:staffIdByName('Michael Sommer')],due:today(),important:false,myday:'',done:false,notes,steps:[],repeat:'',created:today(),inv:{k,h,o:0}})}
+  save()}
+function syncInvoice(c,mk){
+  if(c.pia){syncReportTask(c,mk);return}
+  const t=grpTotals(c,mk),k=invKey(c,mk),d=doneAmt(k,t.hist),open=S.tasks.find(x=>x.inv&&x.inv.k===k&&!x.done),un=r2(t.a-d);
+  if(un<=0.005){if(open){S.tasks=S.tasks.filter(x=>x!==open);save()}return}
+  const live=t.g.filter(x=>!x.pia),flag=live.every(x=>x.gst)?' inc GST':live.some(x=>x.gst)?' (GST on some lines)':'';
+  const title=`Invoice ${gTitle(c)}${c.po&&!/^PO /.test(gTitle(c))?' ('+c.po+')':''} – ${mLabel(mk)} – ${money(un)}${flag}`;
+  const lines=live.map(x=>{const h=hoursIn(x,mk),o=otherIn(x.id,mk);return (h||o)?`${cName(x)}: ${hr(h)} hrs × ${money(num(x.rate))}/hr = ${money(h*num(x.rate))}${o?' + other '+money(o):''}${x.gst?' + GST':''}`:''}).filter(Boolean);
+  const notes=[(t.g.find(x=>x.narr)||{}).narr||'',...lines,d>t.hist+0.005?`Already invoiced earlier this month: ${money(d)}. This invoice: ${money(un)}.`:`Total ${money(un)}${flag}.`].filter(Boolean).join('\n');
+  if(open){open.title=title;open.notes=notes;open.inv={k,a:t.a,h:t.h,o:0}}
+  else{const mike=S.staff.find(s=>/michael sommer/i.test(s.name))||S.staff.find(s=>/sommer/i.test(s.name));
+    S.tasks.unshift({id:uid(),title,list:listIdByName('Invoices'),staff:[mike?mike.id:staffIdByName('Michael Sommer')],due:today(),important:false,myday:'',done:false,notes,steps:[],repeat:'',created:today(),inv:{k,a:t.a,h:t.h,o:0}})}
   save()}
 
 /* ---------- working days / stats ---------- */
@@ -2548,7 +2579,7 @@ function vMaster(){
   const list=S.contracts.slice().sort((a,b)=>(a.client||'').localeCompare(b.client||'')||cName(a).localeCompare(cName(b))).filter(c=>!q||norm([c.name,c.po,c.client,...(c.aliases||[])].join(' ')).includes(q));
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input data-cn-q placeholder="Search name, PO or client" value="${esc(UI.con.q)}" style="flex:1;min-width:160px">
    ${edit?`<button class="btn gold" data-cn="cnew">+ Contract</button><label class="btn" style="cursor:pointer">Import spreadsheet<input type="file" accept=".xlsx" hidden data-cn-file></label><button class="btn" data-cn="days">Non-working days</button>`:''}</div>
-  ${list.map(c=>{const q=(c.q||[]).reduce((a,b)=>a+num(b),0),sp=f.reduce((a,m)=>a+hoursIn(c,m),0);let inv=0,pend=0;f.forEach(m=>{const s=invState(c,m);if(s.st==='done')inv+=invTotals(c,m).amt;else if(s.st==='todo')pend+=s.amt});
+  ${list.map(c=>{const q=(c.q||[]).reduce((a,b)=>a+num(b),0),sp=f.reduce((a,m)=>a+hoursIn(c,m),0);let inv=0,pend=0;f.forEach(m=>{const s=invState(c,m);if(s.st==='done')inv+=invAmt(c,m);else if(s.st==='todo'){pend+=siteUnbilled(c,m);inv+=invAmt(c,m)-siteUnbilled(c,m)}});
     return `<div class="cn-row" data-cn="csheet" data-c="${c.id}"><div class="t"><span>${esc(cName(c))}${c.po?` <small style="font-weight:400;color:var(--muted)">${esc(c.po)}</small>`:''}</span>${c.pia?'<span class="chip-s pia">Paid in advance</span>':c.client?`<span class="chip-s">${esc(c.client)}</span>`:''}</div>
     <div class="s">Quoted ${hr(q)} h · Spent ${hr(sp)} h · Remaining ${hr(q-sp)} h${c.pia?'':` · Invoiced <span class="inv-g">${money(inv)}</span>${pend?` · To invoice <span class="inv-k">${money(pend)}</span>`:''}`}</div></div>`}).join('')||'<div class="hint">No contracts yet. Tap Import spreadsheet.</div>'}`}
 
@@ -2557,10 +2588,10 @@ function contractSheet(cid){
   const c=contractById(cid);if(!c)return;UI.cs=cid;const f=FYM(),edit=canEdit();
   const rowH=f.map((m,i)=>`<td>${hr(num((c.q||[])[i]))||0}</td>`);
   const q=(c.q||[]).reduce((a,b)=>a+num(b),0),sp=f.reduce((a,m)=>a+hoursIn(c,m),0);let invT=0,exT=0,othT=0;
-  const cells=f.map(m=>{const s=invState(c,m),t=invTotals(c,m);if(!c.pia){invT+=s.st==='done'?t.amt:0;exT+=t.h*num(c.rate)+t.o}othT+=otherIn(c.id,m);
-    return `<td class="${s.st==='done'?'inv-g':'inv-k'}">${s.st==='none'||s.st==='pia'?'–':money(t.amt)}</td>`});
+  const cells=f.map(m=>{const s=invState(c,m),amt=invAmt(c,m);if(!c.pia){invT+=s.st==='done'?amt:0;exT+=hoursIn(c,m)*num(c.rate)+otherIn(c.id,m)}othT+=otherIn(c.id,m);
+    return `<td class="${s.st==='done'?'inv-g':'inv-k'}">${s.st==='none'||s.st==='pia'||!amt?'–':money(amt)}</td>`});
   sheet(`<div class="sh-hd"><h2 style="font-size:16px">${esc(cName(c))}</h2><button class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div><div class="sh-bd">
-   <div class="hint" style="margin-top:0">${c.po?'PO '+esc(c.po)+' · ':''}${esc(c.client||'')}${c.client?' · ':''}${c.pia?'Paid in advance (hours tracked, not invoiced)':`$${num(c.rate).toFixed(2)}/hr ${c.gst?'+ GST':'(no GST)'}`}${(c.aliases||[]).length?'<br>Also known as: '+esc(c.aliases.join(', ')):''}</div>
+   <div class="hint" style="margin-top:0">${c.po?'PO '+esc(c.po)+' · ':''}${esc(c.client||'')}${c.client?' · ':''}${c.pia?'Paid in advance (not invoiced – a “Send report” to-do is created)':`$${num(c.rate).toFixed(2)}/hr ${c.gst?'+ GST':'(no GST)'}`}${(c.aliases||[]).length?'<br>Also known as: '+esc(c.aliases.join(', ')):''}${groupOf(c).length>1?'<br>Shares PO with: '+esc(groupOf(c).filter(x=>x!==c).map(cName).join(', '))+' (one invoice per month covers all sites on this PO; each site has its own hours)':''}</div>
    <div class="mgw"><table class="mg"><thead><tr><th></th>${f.map((m,i)=>`<th>${MN[i]}</th>`).join('')}<th>Total</th></tr></thead><tbody>
     <tr><td>Quoted hrs</td>${rowH.join('')}<td><b>${hr(q)}</b></td></tr>
     <tr><td>Spent hrs</td>${f.map(m=>`<td>${hr(hoursIn(c,m))}</td>`).join('')}<td><b>${hr(sp)}</b></td></tr>
@@ -2578,15 +2609,16 @@ function hoursSheet(cid,mk){
    ${hist?`<div class="hint">Includes ${hr(hist)} hrs recorded before the app was used.</div>`:''}
    ${days.map(d=>`<div class="dy-row"><div class="n">${esc(longDate(d))}</div><input type="number" step="0.5" min="0" value="${r.days[d]}" ${edit?'':'disabled'} data-cn-in="hs" data-c="${cid}" data-d="${d}"></div>`).join('')||'<div class="hint">No daily hours entered yet.</div>'}
    ${edit?`<div class="fld" style="margin-top:10px"><label>Add hours</label><div style="display:flex;gap:6px"><input type="date" id="hsd" value="${defD}" style="flex:1"><input type="number" step="0.5" min="0" id="hsh" placeholder="hrs" style="width:90px"><button class="btn gold" data-cn="hadd">Add</button></div></div>`:''}
-   ${c.pia?'<div class="hint">Paid in advance: hours are tracked but no invoice is raised.</div>':!(num(c.rate)>0)?'<div class="hint" style="color:#b5683a">No rate set for this job, so no invoice to-do is created. Edit the contract to add one.</div>':'<div class="hint">An “Invoice…” to-do for Michael Sommer is created or updated as hours are added.</div>'}</div>`)}
+   ${c.pia?'<div class="hint">Paid in advance: no invoice. A “Send … report” to-do for Michael Sommer is created or updated as hours are added.</div>':!(num(c.rate)>0)?'<div class="hint" style="color:#b5683a">No rate set for this job, so no invoice to-do is created. Edit the contract to add one.</div>':'<div class="hint">An “Invoice…” to-do for Michael Sommer is created or updated as hours are added.</div>'}</div>`)}
 function contractEditSheet(cid){
   const c=cid?contractById(cid):{id:'',po:'',name:'',client:'',aliases:[],rate:0,gst:true,pia:false,value:0,q:[],sp:[],narr:'',notes:''};UI.ce=cid||'';
   const grid=(pre,arr)=>`<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">${MN.map((m,i)=>`<div><small style="color:var(--muted)">${m}</small><input type="number" step="0.5" id="${pre}${i}" value="${num((arr||[])[i])||''}" style="width:100%;padding:6px 4px"></div>`).join('')}</div>`;
   sheet(`<div class="sh-hd"><h2>${cid?'Edit contract':'New contract'}</h2><button class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div><div class="sh-bd">
    <div class="fld"><label>Contract / job name</label><input id="ce-name" value="${esc(c.name)}"></div>
    <div class="grid3"><div class="fld"><label>PO (blank if none)</label><input id="ce-po" value="${esc(c.po)}"></div><div class="fld"><label>Client</label><input id="ce-client" value="${esc(c.client||'')}"></div><div class="fld"><label>Rate $/hr (ex GST)</label><input id="ce-rate" type="number" step="0.01" value="${num(c.rate)||''}"></div></div>
+   <div class="fld"><label>PO group name (only if several sites share this PO)</label><input id="ce-gname" value="${esc(c.gname||'')}"></div>
    <div class="fld"><label>Other names (workflow / schedule shorthand), separated by ;</label><input id="ce-alias" value="${esc((c.aliases||[]).join('; '))}"></div>
-   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><label><input type="checkbox" id="ce-gst" ${c.gst?'checked':''}> GST applies</label><label><input type="checkbox" id="ce-pia" ${c.pia?'checked':''}> Paid in advance (no invoice)</label></div>
+   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><label><input type="checkbox" id="ce-gst" ${c.gst?'checked':''}> GST applies</label><label><input type="checkbox" id="ce-pia" ${c.pia?'checked':''}> Paid in advance (send report, no invoice)</label></div>
    <div class="fld"><label>Contract value $ (ex GST)</label><input id="ce-val" type="number" step="0.01" value="${num(c.value)||''}"></div>
    <div class="fld"><span class="lbl">Quoted hours by month (Jul–Jun)</span>${grid('ce-q',c.q)}</div>
    <div class="fld"><span class="lbl">Hours spent before the app was used (Jul–Jun)</span>${grid('ce-s',c.sp)}</div>
@@ -2615,9 +2647,9 @@ document.addEventListener('click',async e=>{
   if(a==='csave'){
     const g=id=>$('#'+id).value,name=g('ce-name').trim();if(!name){toast('Give the contract a name',true);return}
     let k=contractById(UI.ce);if(!k){k={id:uid(),aliases:[]};S.contracts.push(k)}
-    Object.assign(k,{name,po:g('ce-po').trim(),client:g('ce-client').trim(),rate:num(g('ce-rate')),gst:$('#ce-gst').checked,pia:$('#ce-pia').checked,value:num(g('ce-val')),narr:g('ce-narr'),notes:g('ce-notes'),
+    Object.assign(k,{name,gname:g('ce-gname').trim(),po:g('ce-po').trim(),client:g('ce-client').trim(),rate:num(g('ce-rate')),gst:$('#ce-gst').checked,pia:$('#ce-pia').checked,value:num(g('ce-val')),narr:g('ce-narr'),notes:g('ce-notes'),
       aliases:g('ce-alias').split(';').map(x=>x.trim()).filter(Boolean),q:MN.map((m,i)=>num(g('ce-q'+i))),sp:MN.map((m,i)=>num(g('ce-s'+i)))});
-    delete k.auto;save();closeSheet();render();toast('Saved');FYM().forEach(m=>{if(hoursIn(k,m))syncInvoice(k,m)})}
+    delete k.auto;save();closeSheet();render();toast('Saved');[curMonth(),addMonth(curMonth(),-1)].forEach(m=>{if(hoursIn(k,m))syncInvoice(k,m)})}
   if(a==='dsave'){const out=[];for(const ln of $('#dayList').value.split('\n')){const m=ln.trim().match(/^(\d{4}-\d{2}-\d{2})\s*[,;]?\s*(.*)$/);if(m)out.push({d:m[1],n:m[2]})}cfg().daysOff=out;save();closeSheet();render();toast('Saved')}
 });
 document.addEventListener('change',async e=>{
@@ -2662,19 +2694,19 @@ async function importWorkbook(file){
   if(cr){
     const byKey=new Map();
     for(const r of cr){const name=String(r.get('Contract / job name')||'').trim(),po=cleanPO(r.get('PO'));if(!name&&!po)continue;
-      const key=po?'po:'+norm(po):'nm:'+norm(name);let g=byKey.get(key);
+      const key=(po?'po:'+norm(po):'')+'|nm:'+norm(name);let g=byKey.get(key);
       const q=MN.map(m=>num(r.get('Quoted hrs '+m))),s=MN.map(m=>num(r.get('Hrs spent '+m)));
       const al=String(r.get('Other names (workflow / schedule shorthand)')||'').split(';').map(x=>x.trim()).filter(Boolean);
-      if(!g){g={name,po,client:'',aliases:[],rate:0,gst:false,pia:false,value:0,q:Array(12).fill(0),sp:Array(12).fill(0),narr:'',notes:''};byKey.set(key,g)}else if(name&&name!==g.name)g.aliases.push(name);
-      g.aliases.push(...al);g.client=g.client||String(r.get('Client')||'').trim();g.rate=g.rate||num(r.get('Rate $/hr (ex GST)'));g.gst=g.gst||yn(r.get('GST (Y/N)'));g.pia=g.pia||yn(r.get('Paid in advance (Y/N)'));g.value=g.value||num(r.get('Contract value $'));
+      if(!g){g={name,po,gname:'',client:'',aliases:[],rate:0,gst:false,pia:false,value:0,q:Array(12).fill(0),sp:Array(12).fill(0),narr:'',notes:''};byKey.set(key,g)}
+      g.aliases.push(...al);g.gname=g.gname||String(r.get('PO group name (if several sites share the PO)')||'').trim();g.client=g.client||String(r.get('Client')||'').trim();g.rate=g.rate||num(r.get('Rate $/hr (ex GST)'));g.gst=g.gst||yn(r.get('GST (Y/N)'));g.pia=g.pia||yn(r.get('Paid in advance (Y/N)'));g.value=g.value||num(r.get('Contract value $'));
       g.q=g.q.map((x,i)=>x+q[i]);g.sp=g.sp.map((x,i)=>x+s[i]);g.narr=g.narr||String(r.get('Invoice narration')||'');g.notes=g.notes||String(r.get('Notes')||'')}
     let nNew=0,nUpd=0;
-    for(const g of byKey.values()){g.aliases=[...new Set(g.aliases.filter(a=>a&&norm(a)!==norm(g.name)))];let c=(g.po&&S.contracts.find(x=>norm(x.po)===norm(g.po)))||S.contracts.find(x=>!g.po&&norm(x.name)===norm(g.name));
+    for(const g of byKey.values()){g.aliases=[...new Set(g.aliases.filter(a=>a&&norm(a)!==norm(g.name)))];let c=S.contracts.find(x=>norm(x.name)===norm(g.name)&&norm(x.po)===norm(g.po));if(!c){const same=S.contracts.filter(x=>norm(x.name)===norm(g.name));if(same.length===1)c=same[0]}
       if(c){Object.assign(c,g);delete c.auto;nUpd++}else{S.contracts.push({id:uid(),...g});nNew++}}
     log.push(`${nNew} new and ${nUpd} updated contracts`)}
   const sr=rowsOf('Staff','Name');if(sr){let n=0;for(const r of sr){const nm=String(r.get('Name')||'').trim();if(!nm)continue;const s=S.staff.find(x=>norm(x.name)===norm(nm));if(s){s.casual=yn(r.get('Casual (Y/N)'));n++}}log.push(n+' staff flags')}
   const dr=rowsOf('Non-working days','Date');if(dr){const out=[];for(const r of dr){const d=String(r.get('Date')||'').trim();if(/^\d{4}-\d{2}-\d{2}$/.test(d))out.push({d,n:String(r.get('Name')||'')})}if(out.length){cfg().daysOff=out;log.push(out.length+' non-working days')}}
-  save();FYM().forEach(m=>S.contracts.forEach(c=>{if(hoursIn(c,m))syncInvoice(c,m)}));render();toast('Imported: '+(log.join(', ')||'nothing found — check the sheet names'))}
+  save();[curMonth(),addMonth(curMonth(),-1)].forEach(m=>S.contracts.forEach(c=>{if(hoursIn(c,m)-histOf(c,m)>0||otherIn(c.id,m))syncInvoice(c,m)}));render();toast('Imported: '+(log.join(', ')||'nothing found — check the sheet names'))}
 
 /* =====================================================================
    Shared data via OneDrive (one small JSON file per record):
@@ -2717,7 +2749,9 @@ async function syncColl(sc,mine){
     if(m.h[t.id]!==h){t.u=Date.now();m.h[t.id]=h;const resp=await odPut(`${sc.dir}/${sfn(t.id)}`,jblob(pack(t)));if(resp&&resp.lastModifiedDateTime)m.seen[sfn(t.id)]=resp.lastModifiedDateTime;changed=true}}
   for(const id of Object.keys(m.h)){if(have.has(id))continue;delete m.h[id];
     const resp=await odPut(`${sc.dir}/${sfn(id)}`,jblob({id,deleted:true,u:Date.now()}));if(resp&&resp.lastModifiedDateTime)m.seen[sfn(id)]=resp.lastModifiedDateTime}
-  lss(sc.meta||'ks_sync_'+sc.key,m);return changed}
+  lss(sc.meta||'ks_sync_'+sc.key,m);
+  if(sc.key==='jobs')for(const j of S.jobs)for(const a of (j.att||[]))if(a&&a.id){try{await odPushFile(a.id,a.name||'')}catch(e){}}
+  return changed}
 let tsBusy=false,tsTimer=null;
 async function tsSync(manual){
   if(tsBusy||!odConnected()||!navigator.onLine)return;tsBusy=true;let changed=false,err='';const mine=[];
