@@ -906,7 +906,7 @@ let SH=null; // active sheet context
 /* ================= shell ================= */
 const TABS=[['todo','To Do','todo'],['schedule','Schedule','schedule'],['report','Report','report'],['contracts','Contracts','contracts']];
 function renderTabs(){
-  const open=S.tasks.filter(t=>!t.done&&(t.myday===today())).length;
+  const me=meId(),open=me?S.tasks.filter(t=>!t.done&&t.staff.includes(me)).length:0;
   $('#tabs .in').innerHTML=TABS.map(([k,l,ic])=>`<button class="${UI.tab===k?'on':''}" data-act="tab" data-t="${k}">${icon(ic)}<span>${l}</span>${k==='todo'&&open?`<span class="badge">${open}</span>`:''}</button>`).join('');
   $('#hdrTitle').textContent=TABS.find(t=>t[0]===UI.tab)[1];
 }
@@ -1160,6 +1160,7 @@ function vContracts(){
 function menuSheet(){
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
   sheet(`<div class="sh-hd"><h2>Menu</h2><button class="icon-btn" style="background:var(--cream);color:var(--ink);border-color:var(--border)" data-act="close">${icon('x')}</button></div><div class="sh-bd">
+   <button class="menu-item" data-si="switch">${icon('users')}<span>Signed in as ${esc(meName()||'nobody')}<small>Tap to switch person</small></span></button>
    <button class="menu-item" data-act="staffsheet">${icon('users')}<span>Staff &amp; roles<small>${S.staff.length} staff members</small></span></button>
    <button class="menu-item" data-act="tplsheet">${icon('edit')}<span>Job brief template<small>Default text for every new job</small></span></button>
    <button class="menu-item" data-act="templates">${icon('book')}<span>Job templates<small>${S.templates.length} saved (recurring jobs with attachments)</small></span></button>
@@ -1370,6 +1371,12 @@ function newReport(tid,occ){
     });
     r.jobRef=occ.key;
   }
+  const me=meId();
+  if(me)flat(t).forEach(it=>{
+    if(it.role==='by'&&it.t==='staff1')r.d[it.k]=me;
+    if(it.role==='by'&&it.t==='text')r.d[it.k]=meName();
+    if(it.role==='crew'&&it.t==='staffN'&&it.k&&/present|on site|personnel/i.test(it.label||'')){const a=r.d[it.k]=r.d[it.k]||[];if(!a.includes(me))a.push(me)}
+  });
   S.reports.unshift(r);save();return r;
 }
 const roleVal=(r,role)=>{const it=flat(TPL(r.type)).find(x=>x.role===role);return it?r.d[it.k]:undefined};
@@ -1412,8 +1419,8 @@ function vReport(){
   const sec=UI.ph.report;
   const tabs=[['reports','Reports'],['data','Data handling'],['summaries','Summaries']];
   let body='';
-  if(sec==='reports'||!['data','summaries'].includes(sec))body=vReportList();
-  else if(sec==='data')body=`<div class="ph-grid" style="grid-template-columns:minmax(280px,560px)">${phCard('db','Data handling','Where field data lands once it is captured, and how it moves between systems.',['Import works-report / audit exports','Storage &amp; naming conventions','Export to Excel / GIS','Backups and retention'])}</div>`;
+  if(sec==='reports'||!['data','summaries'].includes(sec))body=complianceBanner()+vReportList();
+  else if(sec==='data')body=complianceCard()+`<div class="ph-grid" style="grid-template-columns:minmax(280px,560px)">${phCard('db','Data handling','Where field data lands once it is captured, and how it moves between systems.',['Import works-report / audit exports','Storage &amp; naming conventions','Export to Excel / GIS','Backups and retention'])}</div>`;
   else body=vSummaries();
   return `<div class="page-head"><div><h1>Report</h1><div class="sub">${TPLS.length} forms · export to PDF</div></div></div>
    <div class="toolbar"><div class="seg">${tabs.map(([k,l])=>`<button class="${(sec===k||(k==='reports'&&!['data','summaries'].includes(sec)))?'on':''}" data-act="phsec" data-g="report" data-id="${k}">${l}</button>`).join('')}</div></div>${body}`;
@@ -1531,7 +1538,7 @@ document.addEventListener('click',async e=>{
    case 'complete':{
      const miss=missingFields(r);
      if(miss.length){RF.showMiss=true;renderForm();const first=$('.rf.miss');first&&first.scrollIntoView({block:'center',behavior:'smooth'});toast(`${miss.length} required item${miss.length>1?'s':''} still to complete`,true);break}
-     r.status='complete';r.completedAt=Date.now();touch(r);renderForm();exportPdf(r);break}
+     r.status='complete';r.completedAt=Date.now();touch(r);renderForm();exportPdf(r,{auto:true});break}
    case 'covers':coversSheet();break;
    case 'coverrm':{S.settings.covers=(S.settings.covers||[]).filter(x=>x.id!==v);fileDel(v);save();coversSheet()}break;
    case 'coveradd':{const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.multiple=true;inp.onchange=async()=>{toast('Adding cover photos…');for(const f of inp.files){const b=await compressImage(f,2400,.85);const id=uid();await filePut(id,b);(S.settings.covers=S.settings.covers||[]).push({id,name:f.name})}save();coversSheet();toast('Cover photos added')};inp.click()}break;
@@ -1731,16 +1738,23 @@ async function makePdf(r){
   for(let p=firstP;p<=total;p++){doc.setPage(p);font('normal',7.8,MUTED);doc.text(pdfT(`Keystone Conservation Pty Ltd  |  ${t.name}${site?' – '+site:''}  |  Page ${p-firstP+1}`),M,H-10)}
   return doc.output('blob');
 }
-async function exportPdf(r){
+async function exportPdf(r,opts){
   if(!r)return;
+  if(opts&&opts.auto&&r.type!=='works'){toast('Completed — included in the monthly compliance download');return}
   if(!window.jspdf){toast('PDF library not loaded',true);return}
   toast('Building PDF…');
   try{
     const blob=await makePdf(r);
     const nm=`${TPL(r.type).name} - ${(subOf(r)||'untitled').replace(/[^\w\- ]+/g,'')} - ${(whenOf(r)||fmt(new Date())).slice(0,10)}.pdf`;
+    window.__lastPdf={name:nm,size:blob.size,blob};
+    if(opts&&opts.auto&&r.type==='works'&&odConnected()){
+      let ok=false;try{await odPut(worksPdfPath(r),blob);ok=true}catch(_){}
+      if(ok){const st=odState();st.done['pdf:'+r.id+':'+(r.completedAt||0)]=1;lss('ks_od_state',st);toast('Saved to OneDrive — '+nm);return}
+      toast('Completed. It will copy to OneDrive when you’re back online');return;
+    }
     const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=nm;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),60000);
-    window.__lastPdf={name:nm,size:blob.size,blob};odArchive('report-pdfs',nm,blob);toast('PDF ready — '+nm);
+    odArchive('report-pdfs',nm,blob);toast('PDF ready — '+nm);
   }catch(err){console.error(err);toast('Couldn’t build the PDF: '+(err&&err.message||err),true)}
 }
 
@@ -2216,7 +2230,7 @@ async function odFetch(url,opts={},auth=true){
 async function odPut(path,blob){
   if(blob.size<=4000000){
     const r=await odFetch(`${OD_G}:/${odEnc(path)}:/content?@microsoft.graph.conflictBehavior=replace`,{method:'PUT',headers:{'Content-Type':blob.type||'application/octet-stream'},body:blob});
-    if(!r.ok)throw new Error('Upload failed ('+r.status+') '+path);return;
+    if(!r.ok)throw new Error('Upload failed ('+r.status+') '+path);return await r.json().catch(()=>null);
   }
   const s=await odFetch(`${OD_G}:/${odEnc(path)}:/createUploadSession`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item:{'@microsoft.graph.conflictBehavior':'replace'}})});
   if(!s.ok)throw new Error('Upload failed ('+s.status+') '+path);const {uploadUrl}=await s.json(),CH=3276800;
@@ -2245,6 +2259,7 @@ async function odSync(manual){
     const {items,files}=odCollect();
     for(const it of items){const h=hash(it.json);if(st.done[it.path]===h)continue;await odPut(it.path,jblob(JSON.parse(it.json)));st.done[it.path]=h;up++;odStatus('Backing up… '+up)}
     for(const [id,name] of Object.entries(files)){if(st.done['f:'+id])continue;const b=await fileGet(id);if(!b)continue;await odPut(`files/${id}__${safeN(name)}`,b);st.done['f:'+id]=1;up++;odStatus('Backing up… '+up)}
+    for(const r of S.reports){if(r.type!=='works'||r.status!=='complete')continue;const k='pdf:'+r.id+':'+(r.completedAt||0);if(st.done[k])continue;await odPut(worksPdfPath(r),await makePdf(r));st.done[k]=1;up++;odStatus('Backing up… '+up)}
     st.last=Date.now();st.n=(st.n||0)+up;lss('ks_od_state',st);if(manual)toast(up?`Backed up ${up} item${up>1?'s':''} to OneDrive`:'OneDrive is already up to date');
   }catch(e){st.err=String(e.message||e);lss('ks_od_state',st);if(manual)toast('OneDrive: '+st.err,true)}
   odBusy=false;odStatus();
@@ -2252,7 +2267,7 @@ async function odSync(manual){
 function odSchedule(){if(!odConnected())return;clearTimeout(odTimer);odTimer=setTimeout(()=>odSync(false),20000)}
 (function(){const _s=save;save=function(){_s();odSchedule()}})();
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&odConnected()){clearTimeout(odTimer);odSync(false)}});
-async function odArchive(folder,name,blob){if(!odConnected())return;try{await odPut(`${folder}/${safeN(name)}`.replace(/_{2,}/g,'_'),blob)}catch(e){}}
+async function odArchive(folder,name,blob){if(!odConnected())return false;try{await odPut(`${folder}/${safeN(name)}`.replace(/_{2,}/g,'_'),blob);return true}catch(e){return false}}
 function odStatus(txt){const el=$('#odStatus');if(!el)return;const st=odState();el.textContent=txt||(st.err?'⚠ '+st.err:st.last?'Last backup: '+fmtTS(st.last):'No backup yet')}
 async function odList(folder){
   const out=[];let url=`${OD_G}:/${odEnc(folder)}:/children?$top=200&$select=name,id,size,folder,@microsoft.graph.downloadUrl`;
@@ -2287,7 +2302,7 @@ async function odDownloadAll(){
 function odSheet(){
   const c=odCfg(),on=odConnected();
   sheet(`<div class="sh-hd"><h2>OneDrive backup</h2><button class="icon-btn" style="background:var(--cream);color:var(--ink);border-color:var(--border)" data-act="close">${icon('x')}</button></div><div class="sh-bd">
-   <p class="hint" style="margin-top:0">Everything in the app — jobs, tasks, staff, reports, photos, signatures and attachments — is copied to a <b>Keystone Ops</b> folder in OneDrive (Apps ▸ Keystone Ops). Changes are copied across automatically. <b>The app can only add or update files there; it can never delete them</b>, so removing something in the app leaves its OneDrive copy untouched.</p>
+   <p class="hint" style="margin-top:0">Everything in the app — jobs, tasks, staff, reports, photos, signatures and attachments — is copied to a <b>Keystone Ops</b> folder in OneDrive (Apps ▸ Keystone Ops). Changes are copied across automatically. <b>The app can only add or update files there; it can never delete them</b>, so removing something in the app leaves its OneDrive copy untouched.</p><p class="hint">The <b>To Do list is shared</b> between every phone that connects with the <b>same Microsoft account</b>: tasks assigned to a person appear on their phone (matched by name) and put a number on the To Do tab.</p>
    ${on?`<div class="rinfo"><b>Connected.</b> <span id="odStatus"></span></div>
      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn gold" data-od="now">Back up now</button><button class="btn" data-od="recover">Recover missing items</button></div>
      <div class="hint">“Recover” adds back anything that’s in OneDrive but no longer in the app (for example something deleted by mistake). It never overwrites or removes anything on this device.</div>
@@ -2311,6 +2326,132 @@ document.addEventListener('click',async e=>{
   if(a==='disc'){const c=await askChoice('Disconnect OneDrive','This device will stop backing up. Nothing in OneDrive is deleted.',[{v:'ok',t:'Disconnect',cls:'danger'}]);if(c==='ok'){try{localStorage.removeItem('ks_od_tok')}catch(_){}odSheet()}}
 });
 odHandleRedirect();if(odConnected())setTimeout(()=>odSync(false),4000);
+
+/* =====================================================================
+   Staff sign-in (pick-from-list, no password), to-do badge, auto-fill,
+   works-report PDFs to OneDrive on completion, monthly compliance download
+   ===================================================================== */
+const meId=()=>{let v='';try{v=localStorage.getItem('ks_me')||''}catch(e){}return S.staff.some(s=>s.id===v)?v:''};
+const meName=()=>{const s=S.staff.find(x=>x.id===meId());return s?s.name:''};
+function setMe(id){try{localStorage.setItem('ks_me',id)}catch(e){}UI.todo.staff=id;render()}
+function showSignIn(){
+  let o=document.getElementById('signIn');if(o)o.remove();
+  o=document.createElement('div');o.id='signIn';
+  o.style.cssText='position:fixed;inset:0;z-index:300;background:var(--charcoal-deep,#2b2b2b);display:flex;align-items:center;justify-content:center;padding:20px';
+  const cur=meId();
+  o.innerHTML=`<div class="card" style="max-width:380px;width:100%;padding:26px;text-align:center">
+    <img src="${document.querySelector('.brand img,header img')?.src||''}" alt="" style="height:54px;margin:0 auto 10px;display:${document.querySelector('.brand img,header img')?'block':'none'}">
+    <h2 style="margin:0 0 4px">Who’s using this phone?</h2>
+    <p class="hint" style="margin:0 0 14px">Pick your name. No password. Your tasks and report details fill in automatically.</p>
+    ${S.staff.length?`<select id="siSel" style="margin-bottom:12px"><option value="">Select your name…</option>${S.staff.map(s=>`<option value="${s.id}" ${s.id===cur?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+    <button class="btn gold" style="width:100%" data-si="go">Continue</button>`:`<p class="hint">No staff have been added yet.</p><button class="btn gold" style="width:100%" data-si="skip">Continue without signing in</button>`}
+    ${cur?`<button class="btn sm" style="margin-top:10px" data-si="cancel">Cancel</button>`:''}</div>`;
+  document.body.appendChild(o);
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-si]');if(!t)return;const a=t.dataset.si;
+  if(a==='switch'){closeSheet();showSignIn()}
+  if(a==='go'){const v=document.getElementById('siSel').value;if(!v){toast('Select your name first',true);return}document.getElementById('signIn').remove();setMe(v);toast('Signed in as '+meName())}
+  if(a==='skip'||a==='cancel'){document.getElementById('signIn').remove()}
+});
+setTimeout(()=>{if(!meId())showSignIn();else UI.todo.staff=meId();render()},0);
+
+/* ---- compliance reports (everything except the works report) ---- */
+const isCompliance=r=>r.type!=='works';
+const mKey=ts=>{const d=new Date(ts);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
+const mLabel=k=>{const [y,m]=k.split('-');return new Date(+y,+m-1,1).toLocaleString('en-AU',{month:'long',year:'numeric'})};
+const repMonth=r=>mKey(r.completedAt||r.updated||r.created);
+const compFor=k=>S.reports.filter(r=>r.status==='complete'&&isCompliance(r)&&repMonth(r)===k);
+const prevMonthKey=()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);return mKey(d)};
+const compDone=()=>lsj('ks_comp_done',{});
+const pdfBase=r=>`${TPL(r.type).name} - ${(subOf(r)||'untitled').replace(/[^\w\- ]+/g,'')} - ${(whenOf(r)||fmt(new Date())).slice(0,10)}`;
+const worksPdfPath=r=>`works-reports/${mKey(r.completedAt||Date.now())}/${safeN(pdfBase(r))} [${String(r.id).slice(-4)}].pdf`;
+const monthOptions=()=>{const out=[],d=new Date();d.setDate(1);for(let i=0;i<13;i++){out.push(mKey(d));d.setMonth(d.getMonth()-1)}return out};
+function complianceBanner(){
+  const k=prevMonthKey(),n=compFor(k).length;if(!n||compDone()[k])return '';
+  return `<div class="rinfo" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 12px"><span><b>${esc(mLabel(k))} compliance reports</b> — ${n} ready to download.</span><button class="btn gold sm" data-cm="dl" data-k="${k}">Download</button></div>`;
+}
+function complianceCard(){
+  UI.cm=UI.cm||prevMonthKey();const k=UI.cm,list=compFor(k),by={};list.forEach(r=>{const n=TPL(r.type).name;by[n]=(by[n]||0)+1});
+  const done=compDone()[k];
+  return `<div class="card" style="padding:16px;margin-bottom:14px;max-width:560px"><h3 style="margin:0 0 4px">Monthly compliance download</h3>
+   <p class="hint" style="margin:0 0 10px">All completed compliance reports (JSEA, inspections, audits, meetings, NCR, emergency plans) for a month, as one .zip of PDFs sorted by form. Works reports aren’t included because they save to OneDrive as soon as they’re completed.</p>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select data-cm-sel style="width:auto">${monthOptions().map(m=>`<option value="${m}" ${m===k?'selected':''}>${esc(mLabel(m))}</option>`).join('')}</select>
+   <button class="btn gold" data-cm="dl" data-k="${k}" ${list.length?'':'disabled'}>Download ${list.length} report${list.length===1?'':'s'}</button></div>
+   ${Object.keys(by).length?`<div class="hint" style="margin-top:8px">${Object.entries(by).map(([n,c])=>`${esc(n)}: ${c}`).join(' · ')}</div>`:'<div class="hint" style="margin-top:8px">No completed compliance reports for this month on this phone.</div>'}
+   ${done?`<div class="hint" style="margin-top:6px">Last downloaded ${esc(fmtTS(done))}.</div>`:''}</div>`;
+}
+async function complianceDownload(k){
+  const list=compFor(k);if(!list.length){toast('Nothing to download for that month',true);return}
+  try{
+    toast('Building '+list.length+' PDFs…');const fl=[],used={};
+    for(const r of list){const b=await makePdf(r);let nm=`${safeN(TPL(r.type).name)}/${safeN(pdfBase(r))}.pdf`;if(used[nm])nm=nm.replace(/\.pdf$/,` (${used[nm]+1}).pdf`);used[nm]=(used[nm]||0)+1;fl.push({name:nm,data:new Uint8Array(await b.arrayBuffer())})}
+    const blob=zipStore(fl,'application/zip'),nm=`Keystone compliance reports ${k}.zip`,url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=nm;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    const d=compDone();d[k]=Date.now();lss('ks_comp_done',d);odArchive('compliance-monthly',nm,blob);toast('Downloaded '+nm);render();
+  }catch(e){toast('Couldn’t build the download: '+(e.message||e),true)}
+}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-cm]');if(t&&t.dataset.cm==='dl'&&!t.disabled)complianceDownload(t.dataset.k)});
+document.addEventListener('change',e=>{if(e.target.matches('[data-cm-sel]')){UI.cm=e.target.value;render()}});
+
+/* =====================================================================
+   Shared To Do list via OneDrive (one small JSON file per task).
+   Phones signed in to the same Microsoft account share the list.
+   Staff are matched by NAME, so each phone's own staff ids don't matter.
+   Deleting a task writes a "deleted" marker file; nothing is ever deleted from OneDrive.
+   ===================================================================== */
+const TS_DIR='sync/tasks';
+const tsMeta=()=>lsj('ks_ts_meta',{h:{},seen:{}});
+const tsSkip=id=>/^t[123]$/.test(id);
+function staffIdByName(n){const k=String(n).trim().toLowerCase();let s=S.staff.find(x=>x.name.trim().toLowerCase()===k);
+  if(!s){s={id:uid(),name:String(n).trim(),role:'',color:STAFF_COLORS[S.staff.length%STAFF_COLORS.length]};S.staff.push(s)}return s.id}
+function listIdByName(n){if(!n)return S.lists[0]?S.lists[0].id:'';let l=S.lists.find(x=>x.name.toLowerCase()===n.toLowerCase());if(!l){l={id:uid(),name:n};S.lists.push(l)}return l.id}
+function tsPack(t){const o=Object.assign({},t);o.staffNames=(t.staff||[]).map(id=>{const s=staffById(id);return s?s.name:''}).filter(Boolean);
+  const l=S.lists.find(x=>x.id===t.list);o.listName=l?l.name:'';delete o.staff;delete o.list;return o}
+function tsUnpack(r){const t=Object.assign({},r);t.staff=(r.staffNames||[]).map(staffIdByName);t.list=listIdByName(r.listName);delete t.staffNames;delete t.listName;return t}
+const tsHash=t=>{const o=tsPack(t);delete o.u;return hash(JSON.stringify(o))};
+let tsBusy=false,tsTimer=null;
+async function tsSync(manual){
+  if(tsBusy||!odConnected()||!navigator.onLine)return;tsBusy=true;
+  try{
+    const m=tsMeta(),me=meId(),mine=[];let changed=false;
+    /* pull */
+    const remote=[];let url=`${OD_G}:/${TS_DIR}:/children?$top=200&$select=name,id,lastModifiedDateTime,@microsoft.graph.downloadUrl`;
+    while(url){const r=await odFetch(url);if(r.status===404)break;if(!r.ok)throw new Error('Sync failed ('+r.status+')');const j=await r.json();remote.push(...(j.value||[]));url=j['@odata.nextLink']||''}
+    for(const f of remote){
+      if(!/\.json$/.test(f.name)||m.seen[f.name]===f.lastModifiedDateTime)continue;
+      const rec=await (await odGet(f)).json();m.seen[f.name]=f.lastModifiedDateTime;if(!rec||!rec.id||tsSkip(rec.id))continue;
+      const loc=S.tasks.find(x=>x.id===rec.id);
+      if(rec.deleted){if(loc&&(rec.u||0)>=(loc.u||0)){S.tasks=S.tasks.filter(x=>x.id!==rec.id);delete m.h[rec.id];changed=true}continue}
+      if(loc&&(loc.u||0)>=(rec.u||0))continue;
+      const t=tsUnpack(rec);if(loc)S.tasks[S.tasks.indexOf(loc)]=t;else S.tasks.unshift(t);
+      m.h[t.id]=tsHash(t);changed=true;
+      if(me&&t.staff.includes(me)&&!t.done&&!(loc&&loc.staff.includes(me)))mine.push(t.title);
+    }
+    /* push */
+    const have=new Set();
+    for(const t of S.tasks){
+      if(tsSkip(t.id))continue;have.add(t.id);const h=tsHash(t);
+      if(m.h[t.id]!==h){t.u=Date.now();m.h[t.id]=h;const resp=await odPut(`${TS_DIR}/${t.id}.json`,jblob(tsPack(t)));if(resp&&resp.lastModifiedDateTime)m.seen[t.id+'.json']=resp.lastModifiedDateTime;changed=true}
+    }
+    for(const id of Object.keys(m.h)){
+      if(have.has(id))continue;delete m.h[id];
+      const resp=await odPut(`${TS_DIR}/${id}.json`,jblob({id,deleted:true,u:Date.now()}));if(resp&&resp.lastModifiedDateTime)m.seen[id+'.json']=resp.lastModifiedDateTime;
+    }
+    lss('ks_ts_meta',m);
+    if(changed){save();render()}
+    if(mine.length)toast(mine.length===1?'New task for you: '+mine[0]:mine.length+' new tasks for you',false);
+    else if(manual)toast('To Do list is up to date');
+  }catch(e){if(manual)toast('To Do sync: '+(e.message||e),true)}
+  tsBusy=false;
+}
+function tsSchedule(){if(!odConnected())return;clearTimeout(tsTimer);tsTimer=setTimeout(()=>tsSync(false),4000)}
+(function(){const _s=save;save=function(){_s();tsSchedule()}})();
+setInterval(()=>{if(!document.hidden)tsSync(false)},45000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)tsSync(false)});
+window.addEventListener('online',()=>tsSync(false));
+document.addEventListener('click',e=>{if(e.target.closest('[data-od=now]'))tsSync(true)});
+setTimeout(()=>tsSync(false),3000);
 
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='cgIn'){e.preventDefault();const b=document.querySelector('[data-act=cgate]');b&&b.click()}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&UI.cOpen){UI.cOpen=false;if(UI.tab==='contracts')render()}});
