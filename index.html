@@ -903,7 +903,8 @@ function dialog(html,narrow=true){return new Promise(res=>{
 })}
 const askText=(title,val='',ph='')=>dialog(`<div class="sh-hd"><h2>${esc(title)}</h2></div><div class="sh-bd"><input value="${esc(val)}" placeholder="${esc(ph)}"></div><div class="sh-ft"><span class="sp-grow"></span><button class="btn" data-dlg="x">Cancel</button><button class="btn gold" data-dlg="ok">OK</button></div>`);
 const askChoice=(title,text,opts)=>dialog(`<div class="sh-hd"><h2>${esc(title)}</h2></div><div class="sh-bd"><p style="margin:0 0 4px;color:var(--muted)">${esc(text)}</p></div><div class="sh-ft">${opts.map(o=>`<button class="btn ${o.cls||''}" data-dlg="${o.v}">${esc(o.t)}</button>`).join('')}<span class="sp-grow"></span><button class="btn ghost" data-dlg="x">Cancel</button></div>`);
-function sheet(html,{narrow=false}={}){const r=$('#sheetRoot');r.innerHTML=`<div class="scrim" data-act="close"></div><div class="sheet ${narrow?'narrow':''}" role="dialog">${html}</div>`;}
+function sheet(html,{narrow=false}={}){const r=$('#sheetRoot');r.innerHTML=`<div class="scrim" data-act="close"></div><div class="sheet ${narrow?'narrow':''}" role="dialog">${html}</div>`;
+  if(typeof isMike==='function'&&!isMike()&&typeof SH!=='undefined'&&SH&&(SH.type==='job'||(SH.type==='task'&&!ownTask(S.tasks.find(x=>x.id===SH.id)||{}))))r.querySelectorAll('.sheet input,.sheet textarea,.sheet select,[data-act=jsave],[data-act=jdel],[data-act=jdup],[data-act=jtpl]').forEach(x=>{x.disabled=true;if(x.matches('[data-act]'))x.style.display='none'})}
 function closeSheet(){$('#sheetRoot').innerHTML='';SH=null}
 let SH=null; // active sheet context
 
@@ -1015,6 +1016,7 @@ function attRow(a){const img=/^image\//.test(a.type||'');
    <button type="button" class="btn sm" data-act="attopen" data-id="${a.id}">Open</button><button type="button" class="btn sm danger" data-act="attrm" data-id="${a.id}" aria-label="Remove">${icon('x','sm')}</button></div>`}
 async function hydrateThumbs(){for(const el of $$('[data-thumb][data-img="1"]')){const b=await fileGet(el.dataset.thumb);if(b){const u=URL.createObjectURL(b);el.innerHTML=`<img src="${u}" alt="">`}}}
 async function saveJob(){
+  if(!isMike()){toast('Only Michael Sommer can change this',true);return}
   collectJob();const d=SH.d,scope=SH.scope;
   if(!d.title.trim()){toast('Give the job a title',true);$('#jf-title')?.focus();return}
   if(!d.date){toast('Choose a date',true);return}
@@ -1046,6 +1048,7 @@ async function saveJob(){
   render();toast(warn?'Saved — '+warn:'Job saved',!!warn);
 }
 async function deleteJob(){
+  if(!isMike()){toast('Only Michael Sommer can change this',true);return}
   const d=SH.d,m=S.jobs.find(j=>j.id===d.jobId);if(!m)return;
   if(m.rec){
     const c=await askChoice('Delete recurring job','Delete just this occurrence or the whole series?',[{v:'one',t:'This job only'},{v:'all',t:'Entire series',cls:'danger'}]);
@@ -1058,6 +1061,7 @@ async function deleteJob(){
   save();closeSheet();render();toast('Job deleted');
 }
 async function saveTemplate(){
+  if(!isMike()){toast('Only Michael Sommer can change this',true);return}
   collectJob();const d=SH.d;if(!d.title.trim()){toast('Give the job a title first',true);return}
   const name=await askText('Template name',d.title);if(!name||!name.trim())return;
   S.templates.push({id:uid(),name:name.trim(),title:d.title.trim(),start:d.start,end:d.end,staff:[...d.staff],color:d.color,brief:d.brief,att:d.att.map(a=>({...a})),rec:d.rec&&d.rec.freq?{...d.rec,days:[...(d.rec.days||[])],until:''}:null});
@@ -1119,11 +1123,11 @@ function taskRow(t){
 function addTask(){
   const T=UI.todo,title=($('#qaTitle')?.value||'').trim();if(!title){toast('Type a task first',true);return}
   const smartList=!S.lists.find(l=>l.id===T.list);
-  S.tasks.unshift({id:uid(),title,list:smartList?(S.lists[0]?.id||''):T.list,staff:[...T.draft.staff],due:$('#qaDue')?.value||(T.list==='myday'?today():''),important:T.list==='important',myday:T.list==='myday'?today():'',done:false,notes:'',steps:[],repeat:'',created:today()});
+  S.tasks.unshift({id:uid(),title,list:smartList?(S.lists[0]?.id||''):T.list,staff:[...T.draft.staff],due:$('#qaDue')?.value||(T.list==='myday'?today():''),important:T.list==='important',myday:T.list==='myday'?today():'',done:false,notes:'',steps:[],repeat:'',created:today(),by:meId()});
   T.draft={title:'',staff:[...T.draft.staff],due:''};T.refocus=true;save();render();
 }
 function toggleDone(id){
-  const t=S.tasks.find(x=>x.id===id);if(!t)return;t.done=!t.done;
+  const t=S.tasks.find(x=>x.id===id);if(!t)return;if(!ownTask(t)){toast('You can only change tasks you created or that are assigned to you',true);return}t.done=!t.done;
   if(t.done&&t.repeat){S.tasks.unshift({...t,id:uid(),done:false,due:nextDue(t.due,t.repeat),myday:'',steps:t.steps.map(s=>({...s,id:uid(),d:false})),created:today()});toast('Done — next one scheduled for '+longDate(nextDue(t.due,t.repeat)))}
   save();render();if(SH&&SH.type==='task')renderTaskSheet();
 }
@@ -1179,6 +1183,7 @@ function menuSheet(){
    <div class="hint" style="text-align:center;margin-top:10px">Keystone Ops · build ${BUILD_VERSION} · data is stored on this device</div></div><div class="sh-ft"><button class="btn gold sp-grow" data-act="close">Close</button></div>`,{narrow:true});
 }
 function staffSheet(){
+  if(!isMike()){toast('Only Michael Sommer can change this',true);return}
   sheet(`<div class="sh-hd"><h2>Staff &amp; roles</h2><button class="icon-btn" style="background:var(--cream);color:var(--ink);border-color:var(--border)" data-act="close">${icon('x')}</button></div><div class="sh-bd">
    ${S.staff.map(s=>`<div class="staff-row">${avatar(s.id,'lg')}<input value="${esc(s.name)}" data-live-staff="name" data-id="${s.id}" placeholder="Name"><input class="role" value="${esc(s.role||'')}" data-live-staff="role" data-id="${s.id}" placeholder="Role"><label class="cas"><input type="checkbox" data-cas="${s.id}" ${isCasual(s)?'checked':''}>Casual</label><button class="btn sm danger" data-act="staffdel" data-id="${s.id}" aria-label="Remove">${icon('trash','sm')}</button></div>`).join('')}
    <button class="btn" data-act="staffadd">${icon('plus','sm')}Add staff member</button></div><div class="sh-ft"><span class="sp-grow"></span><button class="btn gold" data-act="menu">Done</button></div>`);
@@ -1200,6 +1205,9 @@ function backupSheet(){
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act,id=t.dataset.id;
   if(a==='openjob'||a==='opentask'){ if(e.target.closest('[data-act="tdone"],[data-act="tstar"]'))return; }
+  const LOCK=['newjob','jsave','jdel','jdup','jtpl','jbrieftpl','jstaff','jcolor','jday','attrm','tplUse','tplDel','templates','newlist','listmenu','staffsheet','staffadd','staffdel','clearall','btsave','btreset','bkrestore'];
+  if(LOCK.includes(a)&&!isMike()){e.stopPropagation();toast('Only Michael Sommer can change this',true);return}
+  if(['tdone','tstar','stepdone','steprm','tstaff','tmyday','tdel'].includes(a)){const tk=S.tasks.find(x=>x.id===((a==='tdone'||a==='tstar')?id:SH&&SH.id));if(!tk||!ownTask(tk)){e.stopPropagation();toast('You can only change tasks you created or that are assigned to you',true);return}}
   switch(a){
    case 'cgate':{const i=$('#cgIn');if(i&&i.value.trim().toLowerCase()==='keystone'){UI.cOpen=true;render()}else{const m=$('#cgMsg');if(m)m.textContent='Type Keystone to open.';if(i){i.value='';i.focus()}}}break;
    case 'tab':if(t.dataset.t!=='contracts')UI.cOpen=false;UI.tab=t.dataset.t;try{localStorage.setItem('ks_tab',UI.tab)}catch(_){}window.scrollTo(0,0);render();break;
@@ -1276,11 +1284,11 @@ document.addEventListener('keydown',e=>{
 });
 /* drag & drop on schedule */
 let dragInfo=null;
-document.addEventListener('dragstart',e=>{const c=e.target.closest&&e.target.closest('.jchip');if(!c)return;dragInfo={id:c.dataset.id,date:c.dataset.date,from:(c.closest('td.cell')?.dataset.drop||'|').split('|')[0]};c.classList.add('dragging');e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',c.dataset.id)}catch(_){}});
+document.addEventListener('dragstart',e=>{const c=e.target.closest&&e.target.closest('.jchip');if(!c)return;if(!isMike()){e.preventDefault();return}dragInfo={id:c.dataset.id,date:c.dataset.date,from:(c.closest('td.cell')?.dataset.drop||'|').split('|')[0]};c.classList.add('dragging');e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',c.dataset.id)}catch(_){}});
 document.addEventListener('dragend',e=>{$$('.dragging').forEach(x=>x.classList.remove('dragging'));$$('.over').forEach(x=>x.classList.remove('over'));dragInfo=null});
 document.addEventListener('dragover',e=>{const c=e.target.closest&&e.target.closest('td.cell');if(c&&dragInfo){e.preventDefault();$$('.over').forEach(x=>x!==c&&x.classList.remove('over'));c.classList.add('over')}});
 document.addEventListener('drop',e=>{
-  const c=e.target.closest&&e.target.closest('td.cell');if(!c||!dragInfo)return;e.preventDefault();
+  const c=e.target.closest&&e.target.closest('td.cell');if(!c||!dragInfo)return;e.preventDefault();if(!isMike()){dragInfo=null;return}
   const [toStaff,toDate]=c.dataset.drop.split('|'),di=dragInfo;dragInfo=null;
   const m=S.jobs.find(j=>j.id===di.id);if(!m)return;
   const o=occFor(di.id,di.date);const cur=o?o.job.staff:m.staff;
@@ -2352,6 +2360,8 @@ async function odFetchFile(id){
    Staff sign-in (pick-from-list, no password), to-do badge, auto-fill,
    works-report PDFs to OneDrive on completion, monthly compliance download
    ===================================================================== */
+const isMike=()=>/sommer/i.test(meName());
+const ownTask=t=>isMike()||(t&&((t.staff||[]).includes(meId())||(t.by&&t.by===meId())))
 const meId=()=>{let v='';try{v=localStorage.getItem('ks_me')||''}catch(e){}return S.staff.some(s=>s.id===v)?v:''};
 const meName=()=>{const s=S.staff.find(x=>x.id===meId());return s?s.name:''};
 function setMe(id){try{localStorage.setItem('ks_me',id)}catch(e){}UI.todo.staff=id;render()}
@@ -2473,7 +2483,7 @@ const money=n=>'$'+(n<0?'-':'')+Math.abs(n).toLocaleString('en-AU',{minimumFract
 const hr=n=>String(r2(n));
 const norm=s=>String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 const canEdit=()=>/sommer|mccormack/i.test(meName());
-const isAdmin=()=>/sommer/i.test(meName());
+const isAdmin=()=>isMike();
 const isCasual=s=>s.casual===true||(s.casual===undefined&&/hutcheson/i.test(s.name));
 const addMonth=(mk,n)=>{const [y,m]=mk.split('-').map(Number),d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
 UI.con=UI.con||{tab:'workflow',month:curMonth(),date:yesterday(),extra:[],q:''};
@@ -2628,21 +2638,21 @@ const fx=v=>v==null?'—':(Math.round(v*100)/100).toFixed(2);
 
 /* ---------- views ---------- */
 function vContracts(){
-  const C=UI.con,edit=canEdit(),fy=+cfg().fy||2026;
+  const C=UI.con,edit=canEdit(),adm=isAdmin(),fy=+cfg().fy||2026;
   const tabs=[['workflow','Workflow'],['daily','Daily hours'],['master','Contract master']];
   return `<div class="page-head"><div><h1>Contracts</h1><div class="sub">FY ${fy}–${String(fy+1).slice(2)} · ${S.contracts.length} contracts${edit?'':' · view only'}</div></div></div>
    <div class="toolbar"><div class="seg">${tabs.map(([k,l])=>`<button class="${C.tab===k?'on':''}" data-cn="tab" data-v="${k}">${l}</button>`).join('')}</div></div>
-   ${edit?'':`<div class="rinfo" style="margin-bottom:10px">View only. Hours are entered by Michael Sommer or Liam McCormack (switch person from the menu).</div>`}
+   ${adm?'':`<div class="rinfo" style="margin-bottom:10px">${edit?'You can enter hours (Daily hours, or Spent in the Workflow). Only Michael Sommer can change anything else.':'View only. Hours are entered by Michael Sommer or Liam McCormack (switch person from the menu).'}</div>`}
    ${C.tab==='daily'?vDaily():C.tab==='master'?vMaster():vWorkflow()}`}
 function vWorkflow(){
-  const C=UI.con,mk=C.month,st=monthStats(mk),edit=canEdit(),kp=(v,l,g)=>`<div class="kp ${g?'gold':''}"><b>${v}</b><span>${l}</span></div>`;
+  const C=UI.con,mk=C.month,st=monthStats(mk),edit=isAdmin(),spEdit=canEdit(),kp=(v,l,g)=>`<div class="kp ${g?'gold':''}"><b>${v}</b><span>${l}</span></div>`;
   return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><button class="btn sm" data-cn="mnav" data-v="-1">‹</button><b>${esc(mLabel(mk))}</b><button class="btn sm" data-cn="mnav" data-v="1">›</button></div>
   <div class="kp-grid">${kp(hr(st.total),'Total budget hrs')}${kp(fx(st.fte),'Monthly FTE',1)}${kp(hr(st.done),'Hrs completed')}${kp(fx(st.fteC),'FTE completed',1)}${kp(hr(st.casual),'Casual hrs')}${kp(hr(st.ft),'FT crew hrs')}${kp(fx(st.ftFte),'FT crew FTE',1)}${kp(fx(st.avgRem),'Av. FTE remaining')}</div>
   <div class="hint" style="margin:-4px 0 10px">Data check: ${S.contracts.length} contracts · ${S.wf.filter(x=>!x.oneoff&&x.budget!=null&&x.month===mk).length} budget overrides · ${S.wf.filter(x=>x.oneoff&&x.month===mk).length} one-offs · ${S.hlog.length} hour records · app v2026.11.09d<br>${st.wd} working days · ${st.el} through yesterday · ${st.wd-st.el} to go. Budget = hours still available on each contract (quoted to date less spent to date).${st.unlinked?` ${st.unlinked} scheduled job${st.unlinked>1?'s':''} not linked to a contract.`:''}</div>
   ${edit?`<div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn gold" data-cn="wadd">+ Add job</button><label class="btn" style="cursor:pointer">Import workflow<input type="file" accept=".xlsx" hidden data-cn-wffile></label><button class="btn ${today().slice(8)>=String(new Date(+mk.slice(0,4),+mk.slice(5),0).getDate()-6)&&mk===curMonth()?'gold':''}" data-cn="wgen" data-v="${mk}">Generate ${esc(mLabel(addMonth(mk,1)))}</button></div>`:''}
   <div class="mgw"><table class="mg wf"><thead><tr><th>Job</th><th>Budget</th><th>Due</th><th>Spent</th><th>Remaining</th><th style="text-align:left">Notes</th>${edit?'<th></th>':''}</tr></thead><tbody>
   ${st.rows.map(r=>{const id=r.oneoff?`data-w="${r.w.id}"`:`data-c="${r.c.id}"`,nm=r.oneoff?esc(r.w.name||'(one-off)')+' <small>one-off</small>':esc(cName(r.c))+(r.c.po?` <small>${esc(r.c.po)}</small>`:'')+(r.c.pia?' <small>PIA</small>':''),ov=!r.oneoff&&r.w.budget!=null;
-   const inp=(k,v,t,ex)=>edit?`<input ${t||'type="number" step="0.5" min="0"'} value="${esc(v)}" data-cn-in="${k}" ${id} ${ex||''}>`:esc(t&&t.includes('date')?(v?shortD(v):''):v);
+   const inp=(k,v,t,ex)=>(k==='wspent'&&!r.oneoff?spEdit:edit)?`<input ${t||'type="number" step="0.5" min="0"'} value="${esc(v)}" data-cn-in="${k}" ${id} ${ex||''}>`:esc(t&&t.includes('date')?(v?shortD(v):''):v);
    return `<tr class="${r.status==='Complete'?'wf-ok':r.status==='In progress'?'wf-go':''}"><td>${r.oneoff?nm:`<a href="#" data-cn="hsheet" data-c="${r.c.id}" style="color:inherit;text-decoration:none">${nm}</a>`}</td>
    <td class="${ov?'wf-ov':''}">${inp('wbud',r.budget||'')}</td><td>${inp('wdue',r.due,'type="date"')}</td><td>${inp('wspent',r.spent||'')}</td>
    <td class="${r.remain<0?'wf-neg':''}">${hr(r.remain)}</td><td style="text-align:left">${inp('wnote',r.notes,'type="text" placeholder="note"','style="width:150px;text-align:left"')}</td>${edit?`<td>${r.oneoff?`<button class="icon-btn" data-cn="wdel" data-w="${r.w.id}" aria-label="Delete">${icon('x')}</button>`:''}</td>`:''}</tr>`}).join('')||`<tr><td colspan="7" style="text-align:left">No contracts for this month yet. Import your contract spreadsheet from Contract master, or tap + Add job.</td></tr>`}
@@ -2663,7 +2673,7 @@ function vDaily(){
    ${html||'<div class="hint">Nothing scheduled on this day.</div>'}
    ${edit?`<div class="fld" style="margin-top:10px"><label>Add another job</label><div style="display:flex;gap:6px;flex-wrap:wrap"><select id="dyAdd" style="flex:1;min-width:150px"><option value="">Choose a contract…</option>${S.contracts.slice().sort((a,b)=>cName(a).localeCompare(cName(b))).map(c=>`<option value="${c.id}">${esc(cName(c))}${c.po?' · '+esc(c.po):''}</option>`).join('')}</select><input id="dyNew" placeholder="…or job name (no PO)" style="flex:1;min-width:140px"><button class="btn" data-cn="dadd">Add</button></div></div>`:''}`}
 function vMaster(){
-  const edit=canEdit(),q=norm(UI.con.q),f=FYM(),cm=curMonth();
+  const edit=isAdmin(),q=norm(UI.con.q),f=FYM(),cm=curMonth();
   const list=S.contracts.filter(c=>!q||norm([c.name,c.po,c.client,...(c.aliases||[])].join(' ')).includes(q));
   const tot=a=>hr(a.reduce((x,y)=>x+num(y),0)),mon=n=>n?'$'+Math.round(n).toLocaleString('en-AU'):'';
   let last=null,body='';
@@ -2683,7 +2693,7 @@ function vMaster(){
   <div class="hint">Tap a contract name for its detail and to edit it. Invoice amounts are ex GST: <span class="inv-g">green</span> = invoice ticked off in To Do, black = still to invoice. Quoted hours can be edited here; Spent comes from the daily hours.</div>`}
 /* ---------- sheets ---------- */
 function contractSheet(cid){
-  const c=contractById(cid);if(!c)return;UI.cs=cid;const f=FYM(),edit=canEdit();
+  const c=contractById(cid);if(!c)return;UI.cs=cid;const f=FYM(),edit=isAdmin();
   const rowH=f.map((m,i)=>`<td>${hr(num((c.q||[])[i]))||0}</td>`);
   const q=(c.q||[]).reduce((a,b)=>a+num(b),0),sp=f.reduce((a,m)=>a+hoursIn(c,m),0);let invT=0,exT=0,othT=0;
   const cells=f.map(m=>{const s=invState(c,m),amt=invAmt(c,m);if(!c.pia){invT+=s.st==='done'?amt:0;exT+=hoursIn(c,m)*num(c.rate)+otherIn(c.id,m)}othT+=otherIn(c.id,m);
@@ -2741,6 +2751,7 @@ function daysSheet(){
 /* ---------- events ---------- */
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-cn]');if(!t)return;const a=t.dataset.cn,C=UI.con,c=t.dataset.c;
+  if(['cedit','cnew','days','dsave','csave','wseed','wadd','wsave','wdel','wgen'].includes(a)&&!isAdmin()){toast('Only Michael Sommer can change this',true);return}
   if(a==='tab'){C.tab=t.dataset.v;render()}
   if(a==='mnav'){C.month=addMonth(C.month,+t.dataset.v);render()}
   if(a==='dnav'){C.date=addDays(C.date,+t.dataset.v);C.extra=[];render()}
@@ -2773,6 +2784,9 @@ document.addEventListener('change',async e=>{
   if(t.matches('[data-cn-date]')){UI.con.date=t.value||yesterday();UI.con.extra=[];render()}
   if(t.matches('[data-cn-in]')){
     const k=t.dataset.cnIn;
+    if(['mq','wdue','wbud','wnote','o'].includes(k)&&!isAdmin())return;
+    if(k==='wspent'&&t.dataset.w&&!isAdmin())return;
+    if(k==='wspent'&&!t.dataset.w&&!canEdit())return;
     if(k==='d'){const cid=t.dataset.c||ensureContract(t.dataset.n).id;setHours(cid,UI.con.date,t.value);render()}
     if(k==='hs'){setHours(t.dataset.c,t.dataset.d,t.value);hoursSheet(UI.hs.cid,UI.hs.mk);render()}
     const w=t.dataset.w?S.wf.find(x=>x.id===t.dataset.w):null,mk=UI.con.month;
@@ -2786,6 +2800,7 @@ document.addEventListener('change',async e=>{
     if(k==='mq'){const cc=contractById(t.dataset.c);if(cc){cc.q=cc.q||Array(12).fill(0);cc.q[+t.dataset.i]=num(t.value);save();render()}}
     if(k==='o'){setOther(t.dataset.c,t.dataset.m,t.value);contractSheet(t.dataset.c);render()}}
   if(t.matches('[data-cn-q]')){UI.con.q=t.value;render()}
+  if((t.matches('[data-cn-wffile]')||t.matches('[data-cn-file]')||t.matches('[data-cas]'))&&!isAdmin()){t.value='';return}
   if(t.matches('[data-cn-wffile]')&&t.files[0]){try{await importWorkflow(t.files[0])}catch(err){console.error(err);toast('Import failed: '+(err.message||err),true)}t.value=''}
   if(t.matches('[data-cn-file]')&&t.files[0]){try{await importWorkbook(t.files[0])}catch(err){console.error(err);toast('Import failed: '+(err.message||err),true)}t.value=''}
   if(t.matches('[data-cas]')){const s=S.staff.find(x=>x.id===t.dataset.cas);if(s){s.casual=t.checked;save();render()}}
@@ -2844,9 +2859,9 @@ function staffIdByName(n){const k=String(n).trim().toLowerCase();let s=S.staff.f
   if(!s){s={id:uid(),name:String(n).trim(),role:'',color:STAFF_COLORS[S.staff.length%STAFF_COLORS.length]};S.staff.push(s)}return s.id}
 const staffNameOf=id=>{const s=staffById(id);return s?s.name:''};
 function listIdByName(n){if(!n)return S.lists[0]?S.lists[0].id:'';let l=S.lists.find(x=>x.name.toLowerCase()===n.toLowerCase());if(!l){l={id:uid(),name:n};S.lists.push(l)}return l.id}
-function tsPack(t){const o=Object.assign({},t);o.staffNames=(t.staff||[]).map(staffNameOf).filter(Boolean);
+function tsPack(t){const o=Object.assign({},t);o.byName=t.by?staffNameOf(t.by):'';delete o.by;o.staffNames=(t.staff||[]).map(staffNameOf).filter(Boolean);
   const l=S.lists.find(x=>x.id===t.list);o.listName=l?l.name:'';delete o.staff;delete o.list;return o}
-function tsUnpack(r){const t=Object.assign({},r);t.staff=(r.staffNames||[]).map(staffIdByName);t.list=listIdByName(r.listName);delete t.staffNames;delete t.listName;return t}
+function tsUnpack(r){const t=Object.assign({},r);if(r.byName)t.by=staffIdByName(r.byName);delete t.byName;t.staff=(r.staffNames||[]).map(staffIdByName);t.list=listIdByName(r.listName);delete t.staffNames;delete t.listName;return t}
 function jobPack(j){const o=JSON.parse(JSON.stringify(j));o.staffNames=(j.staff||[]).map(staffNameOf).filter(Boolean);delete o.staff;
   for(const [d,x] of Object.entries(o.exc||{}))if(x&&x.staff){x.staffNames=x.staff.map(staffNameOf).filter(Boolean);delete x.staff}return o}
 function jobUnpack(r){const o=JSON.parse(JSON.stringify(r));o.staff=(r.staffNames||[]).map(staffIdByName);delete o.staffNames;
@@ -2878,9 +2893,32 @@ async function syncColl(sc,mine){
   lss(sc.meta||'ks_sync_'+sc.key,m);
   if(sc.key==='jobs')for(const j of S.jobs)for(const a of (j.att||[]))if(a&&a.id){try{await odPushFile(a.id,a.name||'')}catch(e){}}
   return changed}
+/* ---- staff list: one file, written only by Michael Sommer's sign-in; every other device follows it ---- */
+const stKey=n=>String(n||'').trim().toLowerCase();
+const stSig=l=>JSON.stringify(l.map(s=>[stKey(s.name),s.role||'',s.color||'',s.casual===true]).sort());
+const stPack=()=>S.staff.map(s=>({name:s.name,role:s.role||'',color:s.color||'',casual:s.casual===true}));
+function stApply(list){
+  const names=new Set(list.map(x=>stKey(x.name)));let ch=false;
+  for(const x of list){let s=S.staff.find(y=>stKey(y.name)===stKey(x.name));
+    if(!s){S.staff.push({id:uid(),name:x.name,role:x.role,color:x.color||STAFF_COLORS[S.staff.length%STAFF_COLORS.length],casual:x.casual});ch=true}
+    else if(s.role!==x.role||s.color!==x.color||(s.casual===true)!==x.casual){s.role=x.role;s.color=x.color||s.color;s.casual=x.casual;ch=true}}
+  for(const s of S.staff.slice())if(!names.has(stKey(s.name))){const id=s.id;ch=true;
+    S.staff=S.staff.filter(x=>x.id!==id);S.jobs.forEach(j=>{j.staff=(j.staff||[]).filter(x=>x!==id);Object.values(j.exc||{}).forEach(x=>{if(x.staff)x.staff=x.staff.filter(y=>y!==id)})});
+    S.tasks.forEach(t=>t.staff=(t.staff||[]).filter(x=>x!==id));(S.templates||[]).forEach(tp=>tp.staff=(tp.staff||[]).filter(x=>x!==id))}
+  return ch}
+async function staffSync(){
+  const m=lsj('ks_staff_meta',{u:0,sig:'',seen:''});let changed=false;
+  const r=await odFetch(`${OD_G}:/sync/staff.json`);
+  if(r.ok){const f=await r.json();
+    if(f.lastModifiedDateTime!==m.seen){const rec=await (await odGet(f)).json();m.seen=f.lastModifiedDateTime;
+      if(rec&&Array.isArray(rec.staff)&&(rec.u||0)>(m.u||0)){m.u=rec.u;if(stApply(rec.staff)){changed=true;if(!meId())setTimeout(showSignIn,0)}m.sig=stSig(stPack())}}}
+  else if(r.status!==404)throw new Error('Staff sync failed ('+r.status+')');
+  if(isMike()&&stSig(stPack())!==m.sig){const u=Date.now(),resp=await odPut('sync/staff.json',jblob({u,staff:stPack()}));m.u=u;m.sig=stSig(stPack());if(resp&&resp.lastModifiedDateTime)m.seen=resp.lastModifiedDateTime}
+  lss('ks_staff_meta',m);return changed}
 let tsBusy=false,tsTimer=null;
 async function tsSync(manual){
   if(tsBusy||!odConnected()||!navigator.onLine)return;tsBusy=true;let changed=false,err='';const mine=[];
+  try{if(await staffSync())changed=true}catch(e){err=err||String(e.message||e)}
   for(const sc of SYNCS){try{if(await syncColl(sc,mine))changed=true}catch(e){err=err||String(e.message||e)}}
   if(changed){save();render()}
   if(mine.length)toast(mine.length===1?'New task for you: '+mine[0]:mine.length+' new tasks for you',false);
