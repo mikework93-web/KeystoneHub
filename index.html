@@ -2686,7 +2686,7 @@ async function readXlsx(file){
     sheets[s.getAttribute('name')]=rows}
   return sheets}
 const yn=v=>/^(y|yes|true|1)$/i.test(String(v==null?'':v).trim());
-const cleanPO=v=>String(v==null?'':v).replace(/^\s*po\s*:\s*/i,'').replace(/^\s*po\s+/i,'').trim();
+const cleanPO=v=>String(v==null?'':v).replace(/^\s*po\s*:\s*/i,'').replace(/^\s*po\s+/i,'').trim().replace(/^(no\s*po|n\/?a|none|nil|-+|tbc|tba)$/i,'');
 async function importWorkbook(file){
   const sh=await readXlsx(file),log=[];
   const rowsOf=(name,key)=>{const k=Object.keys(sh).find(x=>norm(x)===norm(name));if(!k)return null;const rs=sh[k].filter(Boolean);const hi=rs.findIndex(r=>r.some(c=>norm(c)===norm(key)));if(hi<0)return null;const h=rs[hi].map(norm);return rs.slice(hi+1).map(r=>({get:l=>{const i=h.indexOf(norm(l));return i<0?undefined:r[i]},has:l=>h.indexOf(norm(l))>=0}))};
