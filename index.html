@@ -315,6 +315,15 @@ canvas.sig{width:100%;height:120px;touch-action:none;background:#fff;border-radi
 .sp-opt .badge.inv{background:#ffe0cf;color:#a14513}.sp-opt .badge.ind{background:#dff3e8;color:#0d6a42}
 .chip-sel .x{border:0;background:transparent;font-size:15px;margin-left:6px;color:inherit}
 
+.stt{margin:12px 0 6px;font-size:12px;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em}
+.stwrap{overflow:auto}.stbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.stbl th{background:var(--charcoal);color:#fff;text-align:left;padding:7px 9px;font-size:11.5px;white-space:nowrap}
+.stbl td{padding:6px 9px;border-bottom:1px solid var(--border);position:relative}
+.stbl tbody tr:nth-child(odd) td{background:color-mix(in srgb,var(--cream) 70%,var(--card))}
+.stbl .num{text-align:right;white-space:nowrap}.stbl td:first-child{font-weight:700}
+.sbar{position:absolute;left:9px;bottom:2px;height:3px;background:var(--gold);max-width:calc(100% - 18px)}
+.schart{width:100%;height:auto;display:block;margin:12px 0;border:1px solid var(--border);border-radius:10px;background:#fff}
+
 </style>
 </head>
 <body>
@@ -1401,7 +1410,7 @@ function vReport(){
   let body='';
   if(sec==='reports'||!['data','summaries'].includes(sec))body=vReportList();
   else if(sec==='data')body=`<div class="ph-grid" style="grid-template-columns:minmax(280px,560px)">${phCard('db','Data handling','Where field data lands once it is captured, and how it moves between systems.',['Import works-report / audit exports','Storage &amp; naming conventions','Export to Excel / GIS','Backups and retention'])}</div>`;
-  else body=`<div class="ph-grid" style="grid-template-columns:minmax(280px,560px)">${phCard('chart','Summaries','Roll-ups of reports across jobs and time — built from the works reports captured here.',['Monthly herbicide summary','Annual herbicide summary','Hours and budget by site','Safety statistics'])}</div>`;
+  else body=vSummaries();
   return `<div class="page-head"><div><h1>Report</h1><div class="sub">${TPLS.length} forms · export to PDF</div></div></div>
    <div class="toolbar"><div class="seg">${tabs.map(([k,l])=>`<button class="${(sec===k||(k==='reports'&&!['data','summaries'].includes(sec)))?'on':''}" data-act="phsec" data-g="report" data-id="${k}">${l}</button>`).join('')}</div></div>${body}`;
 }
@@ -1592,6 +1601,20 @@ async function coverCanvas(src){
   const g=x.createLinearGradient(0,H*.5,0,H);g.addColorStop(0,'rgba(24,24,22,0)');g.addColorStop(.55,'rgba(24,24,22,.55)');g.addColorStop(1,'rgba(24,24,22,.88)');x.fillStyle=g;x.fillRect(0,H*.5,W,H*.5);
   return c.toDataURL('image/jpeg',.86);
 }
+async function drawCoverPdf(doc,title,src){
+  const W=210,H=297,CH=[74,74,74],GOLD=[204,167,53],logoSrc=$('header.app img').src,LR=640/170;
+  const cv=await coverCanvas(src);doc.addImage(cv,'JPEG',0,0,W,H,undefined,'FAST');
+  doc.setFillColor(...CH);doc.rect(0,0,W,25.4,'F');doc.setFillColor(...GOLD);doc.rect(0,25.4,W,.75,'F');doc.addImage(logoSrc,'PNG',18.5,4.4,16.6*LR,16.6);
+  doc.rect(9.6,226,.9,36,'F');doc.setFont('helvetica','bold');doc.setTextColor(...GOLD);let fs=38;doc.setFontSize(fs);const mw=W-14.5-12;
+  while(doc.getTextWidth(pdfT(title))>mw&&fs>16){fs-=2;doc.setFontSize(fs)}doc.text(pdfT(title),14.5,246);doc.setFillColor(...GOLD);doc.rect(14.5,252,18,.8,'F');
+}
+async function coverFullDataURL(title,src){
+  const k=1240/210,cv=await loadImg(await coverCanvas(src)),logo=await loadImg($('header.app img').src),c=document.createElement('canvas');c.width=1240;c.height=1754;const x=c.getContext('2d');
+  x.drawImage(cv,0,0);x.fillStyle='#4a4a4a';x.fillRect(0,0,1240,25.4*k);x.fillStyle='#cca735';x.fillRect(0,25.4*k,1240,.75*k);x.drawImage(logo,18.5*k,4.4*k,16.6*(640/170)*k,16.6*k);
+  x.fillRect(9.6*k,226*k,.9*k,36*k);let fs=38;const mw=(210-14.5-12)*k;x.textBaseline='alphabetic';
+  do{x.font='bold '+(fs*.3528*k)+'px Arial, Helvetica, sans-serif';fs-=2}while(x.measureText(title).width>mw&&fs>16);x.fillText(title,14.5*k,246*k);x.fillRect(14.5*k,252*k,18*k,.8*k);
+  return c.toDataURL('image/jpeg',.88);
+}
 async function makePdf(r){
   const t=TPL(r.type),{jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4',compress:true});
   const W=210,H=297,M=20,CW=W-2*M,TOP=31,BOT=H-20;
@@ -1616,12 +1639,7 @@ async function makePdf(r){
   const newPage=()=>{doc.addPage();header();y=TOP;stripe=0};
   const need=h=>{if(y+h>BOT)newPage()};
   let stripe=0;
-  if(t.cover){
-    const cv=await coverCanvas(await pickCover(r));doc.addImage(cv,'JPEG',0,0,W,H,undefined,'FAST');
-    doc.setFillColor(...CH);doc.rect(0,0,W,25.4,'F');doc.setFillColor(...GOLD);doc.rect(0,25.4,W,.75,'F');doc.addImage(logoSrc,'PNG',18.5,4.4,16.6*LR,16.6);
-    doc.rect(9.6,226,.9,36,'F');font('bold',38,GOLD);doc.text('Works Report',14.5,246);doc.setFillColor(...GOLD);doc.rect(14.5,252,18,.8,'F');
-    doc.addPage();
-  }
+  if(t.cover){await drawCoverPdf(doc,'Works Report',await pickCover(r));doc.addPage()}
   header();
   // ---- primitives
   const heading=(txt)=>{sn++;need(22);y+=5;const n=sn+'.0';font('bold',13,GOLD);doc.text(n,M,y+4.5);font('bold',13,CH);
@@ -1794,6 +1812,358 @@ document.addEventListener('click',e=>{
     touch(r);renderForm();const ni=$(`[data-sp="${k}"]`);ni&&ni.focus();return}
   if(!e.target.closest('.sp-wrap'))$$('.sp-list.open').forEach(l=>l.classList.remove('open'));
 });
+
+/* =====================================================================
+   Charts (canvas → PNG, used on screen, in the PDF and in the Word file)
+   ===================================================================== */
+const CPAL=['#cca735','#4a4a4a','#3a7a4a','#3b6ea5','#b5683a','#7a5aa6','#2f8f8f','#a8405a'];
+function chartCanvas(spec){
+  const W=1360,PAD=36,F='Arial, Helvetica, sans-serif';
+  const mk=(h)=>{const c=document.createElement('canvas');c.width=W;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,h);return [c,x]};
+  const fit=(x,t,mw)=>{t=String(t);if(x.measureText(t).width<=mw)return t;while(t.length>2&&x.measureText(t+'…').width>mw)t=t.slice(0,-1);return t+'…'};
+  const title=(x)=>{x.fillStyle='#4a4a4a';x.font='bold 27px '+F;x.textBaseline='alphabetic';x.textAlign='left';x.fillText(spec.title||'',PAD,44);x.fillStyle='#cca735';x.fillRect(PAD,56,70,4)};
+  const nice=m=>{if(m<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(m))),n=m/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p};
+  const rows=(spec.labels||[]).length;
+  if(spec.type==='hbar'){
+    const rh=44,top=84,h=top+rows*rh+24,[c,x]=mk(h),lw=Math.min(560,W*.42),max=Math.max(...spec.series[0].values,0)||1;title(x);
+    spec.labels.forEach((l,i)=>{const y=top+i*rh,v=spec.series[0].values[i];x.fillStyle='#2a2a28';x.font='22px '+F;x.textAlign='right';x.textBaseline='middle';x.fillText(fit(x,l,lw-14),PAD+lw-10,y+rh/2);
+      const bw=Math.max(2,(W-PAD*2-lw-150)*v/max);x.fillStyle=(spec.series[0].colors&&spec.series[0].colors[i])||spec.series[0].color||'#cca735';x.fillRect(PAD+lw,y+8,bw,rh-16);
+      x.fillStyle='#4a4a4a';x.font='bold 22px '+F;x.textAlign='left';x.fillText((spec.fmt?spec.fmt(v):nf(v))+(spec.unit||''),PAD+lw+bw+10,y+rh/2)});
+    x.strokeStyle='#d9d5c8';x.lineWidth=2;x.beginPath();x.moveTo(PAD+lw,top);x.lineTo(PAD+lw,top+rows*rh);x.stroke();return c;
+  }
+  if(spec.type==='vbar'){
+    const h=520,[c,x]=mk(h),top=100,bot=h-90,left=PAD+70,max=nice(Math.max(...spec.series[0].values,0)),n=rows,bw=Math.min(110,(W-left-PAD)/n*.6);title(x);
+    x.strokeStyle='#e6e2d6';x.lineWidth=1.5;x.font='20px '+F;x.fillStyle='#6e6d66';x.textAlign='right';x.textBaseline='middle';
+    const gl=max<=4?max:4;for(let g=0;g<=gl;g++){const y=bot-(bot-top)*g/gl;x.beginPath();x.moveTo(left,y);x.lineTo(W-PAD,y);x.stroke();x.fillText(nf(max*g/gl),left-10,y)}
+    spec.labels.forEach((l,i)=>{const cx=left+(W-left-PAD)*(i+.5)/n,v=spec.series[0].values[i],bh=(bot-top)*v/max;x.fillStyle=spec.series[0].color||'#cca735';x.fillRect(cx-bw/2,bot-bh,bw,bh);
+      x.fillStyle='#4a4a4a';x.font='bold 21px '+F;x.textAlign='center';x.textBaseline='bottom';x.fillText(nf(v),cx,bot-bh-6);x.font='20px '+F;x.textBaseline='top';x.fillStyle='#2a2a28';x.fillText(fit(x,l,(W-left-PAD)/n-8),cx,bot+10)});return c;
+  }
+  if(spec.type==='line'){
+    const h=560,[c,x]=mk(h),top=100,bot=h-110,left=PAD+70,all=spec.series.flatMap(s=>s.values.filter(v=>v!==null)),max=nice(Math.max(...all,0)),n=rows;title(x);
+    x.strokeStyle='#e6e2d6';x.lineWidth=1.5;x.font='20px '+F;x.fillStyle='#6e6d66';x.textAlign='right';x.textBaseline='middle';
+    for(let g=0;g<=4;g++){const y=bot-(bot-top)*g/4;x.beginPath();x.moveTo(left,y);x.lineTo(W-PAD,y);x.stroke();x.fillText(nf(max*g/4)+(spec.unit||''),left-10,y)}
+    const px=i=>n===1?(left+W-PAD)/2:left+40+(W-left-PAD-80)*i/(n-1);
+    spec.labels.forEach((l,i)=>{x.fillStyle='#2a2a28';x.textAlign='center';x.textBaseline='top';x.fillText(l,px(i),bot+10)});
+    spec.series.forEach((s,si)=>{const col=CPAL[si%CPAL.length];x.strokeStyle=col;x.lineWidth=4;x.beginPath();let st=false;s.values.forEach((v,i)=>{if(v===null)return;const y=bot-(bot-top)*v/max;st?x.lineTo(px(i),y):x.moveTo(px(i),y);st=true});x.stroke();
+      s.values.forEach((v,i)=>{if(v===null)return;const y=bot-(bot-top)*v/max;x.fillStyle=col;x.beginPath();x.arc(px(i),y,7,0,7);x.fill()})});
+    let lx=PAD+70;x.font='20px '+F;x.textAlign='left';x.textBaseline='middle';spec.series.forEach((s,si)=>{x.fillStyle=CPAL[si%CPAL.length];x.fillRect(lx,h-38,22,12);x.fillStyle='#2a2a28';x.fillText(s.name,lx+30,h-32);lx+=x.measureText(s.name).width+70});return c;
+  }
+  if(spec.type==='stack'){
+    const rh=44,top=122,h=top+rows*rh+24,[c,x]=mk(h),lw=Math.min(560,W*.42);title(x);
+    let lx=PAD;x.font='20px '+F;x.textBaseline='middle';x.textAlign='left';spec.series.forEach(s=>{x.fillStyle=s.color;x.fillRect(lx,78,22,14);x.fillStyle='#2a2a28';x.fillText(s.name,lx+30,85);lx+=x.measureText(s.name).width+70});
+    spec.labels.forEach((l,i)=>{const y=top+i*rh,tot=spec.series.reduce((a,s)=>a+s.values[i],0)||1;x.fillStyle='#2a2a28';x.font='21px '+F;x.textAlign='right';x.fillText(fit(x,l,lw-14),PAD+lw-10,y+rh/2);
+      let cx=PAD+lw;const bwTot=W-PAD*2-lw;spec.series.forEach(s=>{const v=s.values[i],w=bwTot*v/tot;if(v>0){x.fillStyle=s.color;x.fillRect(cx,y+7,w,rh-14);if(w>34){x.fillStyle='#fff';x.font='bold 19px '+F;x.textAlign='center';x.fillText(v,cx+w/2,y+rh/2)}cx+=w}})});return c;
+  }
+  const [c]=mk(10);return c;
+}
+const chartURL=spec=>chartCanvas(spec).toDataURL('image/png');
+
+/* =====================================================================
+   SUMMARIES — filter reports, compute stats, export PDF
+   ===================================================================== */
+const SUM_SECS=[['overview','Overview (visits, sites, staff, totals)'],['herb','Herbicide usage'],['cover','Weed cover'],['hours','Hours per task (frequency and quantity)'],['targets','Primary targets treated'],['cond','Site conditions & checks (Yes / No)'],['all','All other report components']];
+function sumState(){return UI.sum||(UI.sum={form:'works',client:'',sites:[],from:'',to:'',complete:false,inc:{overview:1,herb:1,cover:1,hours:1,targets:1,cond:1,all:0}})}
+function sumReports(ignoreSites){
+  const s=sumState();
+  return S.reports.filter(r=>{
+    if(r.type!==s.form)return false;
+    if(s.client&&clientName(r)!==s.client)return false;
+    if(!ignoreSites&&s.sites.length&&!s.sites.includes(siteOf(r)))return false;
+    const d=(whenOf(r)||'').slice(0,10);if(s.from&&(!d||d<s.from))return false;if(s.to&&(!d||d>s.to))return false;
+    if(s.complete&&r.status!=='complete')return false;return true});
+}
+function repEntries(r){
+  const t=TPL(r.type),out=[];
+  const walk=(items,ctx)=>items.forEach(it=>{if(it.t==='info'||it.t==='client'||!isVis(r,ctx,t.id,it))return;if(it.t==='repeat'){(r.d[it.k]||[]).forEach(rw=>walk(it.items,rw));return}out.push({it,v:ctx.d[it.k],ctx})});
+  t.sections.forEach(s=>walk(s.items,r));return out;
+}
+const nf=(n,d=1)=>{if(n===null||n===undefined||isNaN(n))return '–';const s=(+n).toFixed(d);return s.replace(/\.0+$/,'').replace(/(\.\d*[1-9])0+$/,'$1')};
+const numv=v=>{const n=parseFloat(v);return isNaN(n)?null:n};
+const pct=(a,b)=>b?nf(100*a/b,0)+'%':'–';
+const monthKey=r=>(whenOf(r)||'').slice(0,7);
+const monthLbl=k=>{if(!k)return'(no date)';const [y,m]=k.split('-');return new Date(+y,+m-1,1).toLocaleDateString('en-AU',{month:'short',year:'numeric'})};
+const activeOf=p=>p.replace(/^[\d.]+\s*(%|g\/10L)\s*/,'').replace(/\s*\(.*\)\s*$/,'').trim()||p;
+const coverName=l=>l.replace(/ Cover Abundance.*$/i,'').replace(/:$/,'');
+function computeSummary(){
+  const st=sumState(),reps=sumReports(),t=TPL(st.form),isW=st.form==='works',inc=st.inc,B=[];
+  const E=reps.map(r=>({r,e:repEntries(r)}));
+  const sitesOf=[...new Set(reps.map(r=>siteOf(r)||'(no site)'))].sort();
+  const covered=new Set();
+  // ---- overview
+  if(inc.overview){
+    let hrs=0,vol=0,staffDays=0,bags=0;
+    E.forEach(({r,e})=>e.forEach(({it,v})=>{
+      if(isW&&/Hour Expenditure/i.test(it.label))hrs+=numv(v)||0;
+      if(isW&&it.when&&it.when.p==='q18'&&/Volume Applied/i.test(it.label))vol+=numv(v)||0;
+      if(isW&&/Quantity of Garbage Bags/i.test(it.label))bags+=numv(v)||0;
+      if(it.role==='crew')staffDays+=(v||[]).length}));
+    const dates=reps.map(r=>(whenOf(r)||'').slice(0,10)).filter(Boolean).sort();
+    const rows=[['Reports',String(reps.length)],['  of which complete',String(reps.filter(r=>r.status==='complete').length)],['Sites',String(sitesOf.length)],['Date range',dates.length?fmtD(dates[0])+' – '+fmtD(dates[dates.length-1]):'–'],['Staff-days on site',String(staffDays||'–')]];
+    if(isW){rows.push(['Total task hours recorded',nf(hrs)],['Total spray volume applied (L)',nf(vol)],['Garbage bags collected',nf(bags,0)])}
+    const tb=[{head:['Measure','Value'],rows}];
+    if(sitesOf.length>1||isW){
+      const bySite=sitesOf.map(s=>{const rs=E.filter(x=>(siteOf(x.r)||'(no site)')===s);let h=0,v=0;rs.forEach(({e})=>e.forEach(({it,v:val})=>{if(isW&&/Hour Expenditure/i.test(it.label))h+=numv(val)||0;if(isW&&it.when&&it.when.p==='q18'&&/Volume Applied/i.test(it.label))v+=numv(val)||0}));return isW?[s,String(rs.length),nf(h),nf(v)]:[s,String(rs.length)]});
+      tb.push({title:'By site',head:isW?['Site','Reports','Hours','Spray volume (L)']:['Site','Reports'],rows:bySite})}
+    const ch=[];const mths=[...new Set(reps.map(monthKey))].sort();
+    if(mths.length>1)ch.push({type:'vbar',title:'Reports per month',labels:mths.map(monthLbl),series:[{values:mths.map(m=>reps.filter(r=>monthKey(r)===m).length)}]});
+    if(isW&&sitesOf.length>1){const bs=tb[1].rows;ch.push({type:'hbar',title:'Task hours by site',unit:' h',labels:bs.map(r=>r[0]),series:[{values:bs.map(r=>parseFloat(r[2])||0)}]})}
+    B.push({id:'overview',title:'Overview',tables:tb,charts:ch});
+  }
+  if(isW){
+    // ---- herbicide
+    if(inc.herb){
+      const prod={},act={},site={};
+      E.forEach(({r,e})=>{const seenP=new Set(),seenA=new Set();e.forEach(({it,v})=>{if(it.when&&it.when.p==='q18'&&/Volume Applied/i.test(it.label)){const L=numv(v);if(L===null||L<=0)return;const p=it.when.vals[0],a=activeOf(p),s=siteOf(r)||'(no site)';
+        (prod[p]=prod[p]||{n:0,L:0});prod[p].L+=L;if(!seenP.has(p)){prod[p].n++;seenP.add(p)}
+        (act[a]=act[a]||{n:0,L:0});act[a].L+=L;if(!seenA.has(a)){act[a].n++;seenA.add(a)}
+        (site[s]=site[s]||{L:0,a:new Set()});site[s].L+=L;site[s].a.add(a)}})});
+      const tot=Object.values(prod).reduce((x,y)=>x+y.L,0);
+      const pr=Object.entries(prod).sort((a,b)=>b[1].L-a[1].L).map(([p,o])=>[p,String(o.n),nf(o.L),nf(o.L/o.n),pct(o.L,tot)]);
+      const ar=Object.entries(act).sort((a,b)=>b[1].L-a[1].L).map(([p,o])=>[p,String(o.n),nf(o.L),pct(o.L,tot)]);
+      const tb=[];
+      if(pr.length){tb.push({title:'By product and rate',head:['Herbicide / rate','Reports','Total spray (L)','Mean per report (L)','Share'],rows:pr,bar:2});tb.push({title:'By active ingredient',head:['Active ingredient','Reports','Total spray (L)','Share'],rows:ar,bar:2});
+        if(Object.keys(site).length>1)tb.push({title:'By site',head:['Site','Spray volume (L)','Active ingredients used'],rows:Object.entries(site).sort((a,b)=>b[1].L-a[1].L).map(([s,o])=>[s,nf(o.L),[...o.a].join(', ')])})}
+      const hch=pr.length?[{type:'hbar',title:'Spray volume by product and rate',unit:' L',labels:pr.map(r=>r[0]),series:[{values:pr.map(r=>parseFloat(r[2]))}]},{type:'hbar',title:'Spray volume by active ingredient',unit:' L',labels:ar.map(r=>r[0]),series:[{values:ar.map(r=>parseFloat(r[2])),color:'#4a4a4a'}]}]:[];
+      B.push({id:'herb',title:'Herbicide usage',note:'Volumes are the spray mix volumes (L) entered against each herbicide / rate.',tables:tb,charts:hch,empty:!pr.length&&'No herbicide volumes recorded in the selected reports.'});
+    }
+    // ---- cover
+    if(inc.cover){
+      const items=t.sections.flatMap(s=>s.items).filter(i=>/Cover Abundance Estimate/i.test(i.label||''));
+      const cls=items.map(it=>({name:coverName(it.label),vals:[]}));
+      E.forEach(({r,e})=>e.forEach(({it,v})=>{const i=items.findIndex(x=>x.k===it.k);if(i<0)return;const n=numv(v);if(n!==null)cls[i].vals.push({n,s:siteOf(r)||'(no site)',m:monthKey(r)})}));
+      const agg=a=>a.length?[String(a.length),nf(a.reduce((x,y)=>x+y,0)/a.length),nf(Math.min(...a)),nf(Math.max(...a))]:['0','–','–','–'];
+      const tb=[{head:['Weed class','Reports','Mean cover (%)','Min (%)','Max (%)'],rows:cls.map(c=>[c.name,...agg(c.vals.map(x=>x.n))]),bar:2}];
+      const mean=(arr)=>arr.length?nf(arr.reduce((x,y)=>x+y,0)/arr.length):'–';
+      if(sitesOf.length>1)tb.push({title:'Mean cover by site (%)',head:['Site',...cls.map(c=>c.name)],rows:sitesOf.map(s=>[s,...cls.map(c=>mean(c.vals.filter(x=>x.s===s).map(x=>x.n)))])});
+      const months=[...new Set(reps.map(monthKey))].sort();
+      if(months.length>1)tb.push({title:'Mean cover over time (%)',head:['Month',...cls.map(c=>c.name)],rows:months.map(m=>[monthLbl(m),...cls.map(c=>mean(c.vals.filter(x=>x.m===m).map(x=>x.n)))])});
+      const cch=[{type:'hbar',title:'Mean weed cover prior to works',unit:'%',labels:cls.map(c=>c.name),series:[{values:cls.map(c=>{const a=c.vals.map(x=>x.n);return a.length?a.reduce((x,y)=>x+y,0)/a.length:0}),colors:CPAL}]}];
+      if(months.length>1)cch.push({type:'line',title:'Mean weed cover over time',unit:'%',labels:months.map(monthLbl),series:cls.map(c=>({name:c.name,values:months.map(m=>{const a=c.vals.filter(x=>x.m===m).map(x=>x.n);return a.length?a.reduce((x,y)=>x+y,0)/a.length:null})}))});
+      if(sitesOf.length>1&&sitesOf.length<=8)cch.push({type:'hbar',title:'Mean invasive grass cover by site',unit:'%',labels:sitesOf,series:[{values:sitesOf.map(s=>{const a=cls[cls.length-1].vals.filter(x=>x.s===s).map(x=>x.n);return a.length?a.reduce((x,y)=>x+y,0)/a.length:0}),color:'#3a7a4a'}]});
+      B.push({id:'cover',title:'Weed cover (estimates prior to works)',tables:tb,charts:cch,empty:!cls.some(c=>c.vals.length)&&'No cover estimates recorded in the selected reports.'});
+    }
+    // ---- hours
+    if(inc.hours){
+      const q17=t.sections.flatMap(s=>s.items).find(i=>/Management Methods Applied/i.test(i.label));
+      const task={};
+      E.forEach(({r,e})=>e.forEach(({it,v})=>{
+        if(q17&&it.k===q17.k)(v||[]).forEach(m=>{(task[m]=task[m]||{n:0,h:0,hn:0}).n++});
+        if(/Hour Expenditure/i.test(it.label)){const m=it.label.replace(/ Hour Expenditure:?$/i,'').trim(),h=numv(v);if(h!==null){(task[m]=task[m]||{n:0,h:0,hn:0});task[m].h+=h;task[m].hn++}}}));
+      const total=Object.values(task).reduce((x,y)=>x+y.h,0);
+      const rows=Object.entries(task).sort((a,b)=>b[1].h-a[1].h||b[1].n-a[1].n).map(([m,o])=>[m,String(o.n),nf(o.h),o.hn?nf(o.h/o.hn):'–',pct(o.h,total)]);
+      const top=rows.slice(0,15),hch=rows.length?[{type:'hbar',title:'Total hours per task',unit:' h',labels:top.map(r=>r[0]),series:[{values:top.map(r=>parseFloat(r[2])||0)}]},{type:'hbar',title:'Frequency of each task (number of reports)',labels:top.map(r=>r[0]),series:[{values:top.map(r=>parseFloat(r[1])||0),color:'#4a4a4a'}]}]:[];
+      B.push({id:'hours',charts:hch,title:'Hours per task',note:'Frequency = number of reports in which the method was applied. Hours are the hour expenditure entered for each method.',tables:rows.length?[{head:['Task / method','Frequency (reports)','Total hours','Mean hours per report','Share of hours'],rows:rows.concat([['Total','',nf(total),'','']]),bar:2}]:[],empty:!rows.length&&'No methods or hours recorded in the selected reports.'});
+    }
+    // ---- targets
+    if(inc.targets){
+      const it0=t.sections.flatMap(s=>s.items).find(i=>i.t==='species'),c={};
+      E.forEach(({e})=>e.forEach(({it,v})=>{if(it0&&it.k===it0.k)(v||[]).forEach(sp=>c[sp]=(c[sp]||0)+1)}));
+      const rows=Object.entries(c).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([s,n])=>[s,String(n),pct(n,reps.length)]);
+      B.push({id:'targets',charts:rows.length?[{type:'hbar',title:'Most frequently treated targets (number of reports)',labels:rows.slice(0,15).map(r=>r[0]),series:[{values:rows.slice(0,15).map(r=>+r[1]),color:'#3a7a4a'}]}]:[],title:'Primary targets treated',tables:rows.length?[{head:['Species','Reports','% of reports'],rows,bar:1}]:[],empty:!rows.length&&'No target species recorded in the selected reports.'});
+    }
+  }
+  // ---- conditions / checklist yn
+  const isYN=it=>it.t==='select'&&(it.yn||(it.opts||[]).every(o=>/^(yes|no|n\/a|compliant|non-compliant|improvement opportunity)$/i.test(o)))&&(it.opts||[]).length>0;
+  const ynCols=t.id==='ims'?['Compliant','Non-compliant','Improvement Opportunity','N/A']:['Yes','No','N/A'];
+  if(inc.cond){
+    const q={};
+    E.forEach(({e})=>e.forEach(({it,v})=>{if(isYN(it)){const o=q[it.k]=q[it.k]||{l:it.label,c:{}};if(v)o.c[v]=(o.c[v]||0)+1}}));
+    const rows=Object.values(q).filter(o=>Object.keys(o.c).length).map(o=>{const n=Object.values(o.c).reduce((x,y)=>x+y,0);return [o.l.replace(/:$/,''),...ynCols.map(c=>String(o.c[c]||0)),String(n)]});
+    const tbs=[],cch=[];
+    if(isW){
+      const ev=[['Litter collection required',/Was litter collection/i],['Snap Send Solve used',/Snap Send Solve/i],['Pest animals or warrens observed',/pest animals/i],['Public interactions',/public interactions/i]];
+      const N=reps.length,frows=ev.map(([n,re])=>{let y=0;E.forEach(({e})=>{if(e.some(({it,v})=>re.test(it.label||'')&&it.t==='select'&&v==='Yes'))y++});return [n,y+' of '+N,y+'/'+N,pct(y,N),y]});
+      tbs.push({title:'Frequency of events (fraction of reports)',head:['Event','Reports','Fraction','Percentage'],rows:frows.map(r=>r.slice(0,4)),bar:3});
+      cch.push({type:'hbar',title:'Events as a percentage of reports',unit:'%',labels:frows.map(r=>r[0]),series:[{values:frows.map(r=>N?100*r[4]/N:0),colors:['#cca735','#3b6ea5','#b5683a','#7a5aa6']}],fmt:v=>nf(v,0)});
+    }
+    if(rows.length){tbs.push({title:isW?'Checks':undefined,head:['Question',...ynCols,'Answered'],rows});
+      const cols=t.id==='ims'?['#00a36c','#cd3232','#d9961e','#787874']:['#00a36c','#cd3232','#787874'],rr=rows.slice(0,15);
+      cch.push({type:'stack',title:isW?'Check results':'Checklist results'+(rows.length>15?' (first 15 questions)':''),labels:rr.map(r=>r[0]),series:ynCols.map((c,i)=>({name:c,color:cols[i],values:rr.map(r=>+r[1+i])}))})}
+    B.push({id:'cond',title:isW?'Site conditions & events':'Checklist results',tables:tbs,charts:cch,empty:!tbs.length&&'No Yes / No answers recorded in the selected reports.'});
+    Object.keys(q).forEach(k=>covered.add(k));
+  }
+  // ---- all other components
+  if(inc.all){
+    const ch={},nm={};
+    const skipK=new Set(),skipL=/Hour Expenditure|Volume Applied|Cover Abundance|Management Methods Applied|Herbicide\/Rate|Primary Targets/i;
+    E.forEach(({e})=>e.forEach(({it,v})=>{
+      if(covered.has(it.k)||skipL.test(it.label||'')||['text','datetime','date','sign','media','check','client','staff1'].includes(it.t)&&it.t!=='check')return;
+      if(it.t==='number'){const n=numv(v);if(n!==null){const o=nm[it.k]=nm[it.k]||{l:it.label,a:[]};o.a.push(n)}return}
+      const vals=it.t==='risk'?(v&&v.l&&v.c?['Risk: '+riskResult(v.l,v.c)]:[]):it.t==='staffN'?(v||[]).map(staffName):it.t==='multi'?(v||[]):(v?[v]:[]);
+      if(!vals.length)return;const o=ch[it.k]=ch[it.k]||{l:it.label,c:{}};vals.forEach(x=>o.c[x]=(o.c[x]||0)+1)}));
+    const rows=[];Object.values(ch).forEach(o=>{const n=Object.values(o.c).reduce((x,y)=>x+y,0);Object.entries(o.c).sort((a,b)=>b[1]-a[1]).forEach(([a,c],i)=>rows.push([i?'':o.l.replace(/:$/,''),a,String(c),pct(c,n)]))});
+    const nrows=Object.values(nm).map(o=>{const s=o.a.reduce((x,y)=>x+y,0);return [o.l.replace(/:$/,''),String(o.a.length),nf(s),nf(s/o.a.length),nf(Math.min(...o.a)),nf(Math.max(...o.a))]});
+    const tb=[];if(rows.length)tb.push({title:'Choice questions',head:['Question','Answer','Count','%'],rows});if(nrows.length)tb.push({title:'Numeric questions',head:['Question','Entries','Total','Mean','Min','Max'],rows:nrows});
+    B.push({id:'all',title:'All other components',tables:tb,empty:!tb.length&&'Nothing further recorded in the selected reports.'});
+  }
+  return {reps,blocks:B,form:t.name,filters:filterText()};
+}
+const fmtD=s=>{if(!s)return'';const [y,m,d]=s.split('-');return `${d}.${m}.${y}`};
+function filterText(){const s=sumState();const a=[];if(s.client)a.push('Client: '+s.client);a.push('Sites: '+(s.sites.length?s.sites.join(', '):'all'));if(s.from||s.to)a.push('Dates: '+(s.from?fmtD(s.from):'start')+' – '+(s.to?fmtD(s.to):'today'));if(s.complete)a.push('Completed reports only');return a.join('   |   ')}
+
+/* ---------- view ---------- */
+function sumTableHTML(tb){
+  const max=tb.bar!==undefined?Math.max(0,...tb.rows.map(r=>parseFloat(r[tb.bar])||0)):0;
+  return `${tb.title?`<h4 class="stt">${esc(tb.title)}</h4>`:''}<div class="stwrap"><table class="stbl"><thead><tr>${tb.head.map((h,i)=>`<th class="${i?'num':''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>${tb.rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${i?'num':''}">${esc(c)}${tb.bar===i&&max?`<span class="sbar" style="width:${Math.round(100*(parseFloat(c)||0)/max)}%"></span>`:''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function vSummaries(){
+  const s=sumState(),pool=S.reports.filter(r=>r.type===s.form&&(!s.client||clientName(r)===s.client)),sites=[...new Set(pool.map(r=>siteOf(r)).filter(Boolean))].sort();
+  const clients=[...new Set(S.reports.filter(r=>r.type===s.form).map(clientName).filter(Boolean))];
+  const D=computeSummary();
+  const forms=TPLS.filter(t=>S.reports.some(r=>r.type===t.id)||t.id==='works');
+  return `<div class="card" style="padding:14px;margin-bottom:12px"><div class="grid2">
+    <div class="fld"><label>Form</label><select data-sflt="form">${forms.map(t=>`<option value="${t.id}" ${s.form===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>
+    <div class="fld"><label>Client</label><select data-sflt="client"><option value="">All clients</option>${clients.map(c=>`<option ${s.client===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+    <div class="fld"><label>From</label><input type="date" data-sflt="from" value="${s.from}"></div><div class="fld"><label>To</label><input type="date" data-sflt="to" value="${s.to}"></div></div>
+    <div class="fld"><span class="lbl">Sites ${s.sites.length?'':'<span class="hint" style="display:inline">(all selected)</span>'}</span><div class="chips">${sites.map(x=>`<button type="button" class="chip-sel sq ${s.sites.includes(x)?'on':''}" data-sa="site" data-v="${esc(x)}">${esc(x)}</button>`).join('')||'<span class="hint">No reports with a site yet.</span>'}</div></div>
+    <label class="chk" style="margin:6px 0 10px"><input type="checkbox" data-sflt="complete" ${s.complete?'checked':''}> <span style="font-weight:600">Completed reports only</span></label>
+    <div class="fld"><span class="lbl">Include in summary / export</span>${SUM_SECS.filter(([k])=>s.form==='works'||['overview','cond','all'].includes(k)).map(([k,l])=>`<label class="chk" style="margin:6px 0"><input type="checkbox" data-sinc="${k}" ${s.inc[k]?'checked':''}> <span style="font-weight:600">${esc(k==='cond'&&s.form!=='works'?'Checklist results':l)}</span></label>`).join('')}</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="pill">${D.reps.length} report${D.reps.length===1?'':'s'} match</span><span class="sp-grow" style="flex:1"></span><button class="btn" data-sa="word" ${D.reps.length?'':'disabled'}>${icon('edit','sm')}Export Word</button><button class="btn gold" data-sa="export" ${D.reps.length?'':'disabled'}>${icon('up','sm')}Export PDF</button></div></div>
+   ${!D.reps.length?'<div class="empty">No reports match these filters.</div>':D.blocks.map(b=>`<div class="card" style="padding:14px;margin-bottom:12px"><h3 style="margin:0 0 4px">${esc(b.title)}</h3>${b.note?`<div class="hint" style="margin:0 0 8px">${esc(b.note)}</div>`:''}${b.tables.length?b.tables.map(sumTableHTML).join(''):`<div class="hint">${esc(b.empty||'')}</div>`}${(b.charts||[]).map(c=>`<img class="schart" alt="${esc(c.title)}" src="${chartURL(c)}">`).join('')}</div>`).join('')}`;
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-sa]');if(!t)return;const s=sumState();
+  if(t.dataset.sa==='site'){const v=t.dataset.v,i=s.sites.indexOf(v);i<0?s.sites.push(v):s.sites.splice(i,1);render()}
+  if(t.dataset.sa==='export')exportSummaryPdf();
+  if(t.dataset.sa==='word')exportSummaryDocx();
+});
+document.addEventListener('change',e=>{
+  const t=e.target,s=UI.sum;
+  if(t.dataset.sflt){const k=t.dataset.sflt;sumState();if(k==='complete')UI.sum.complete=t.checked;else{UI.sum[k]=t.value;if(k==='form'||k==='client')UI.sum.sites=[]}render()}
+  if(t.dataset.sinc){sumState();UI.sum.inc[t.dataset.sinc]=t.checked?1:0;render()}
+});
+
+/* ---------- PDF ---------- */
+async function exportSummaryPdf(){
+  if(!window.jspdf){toast('PDF library not loaded',true);return}
+  toast('Building PDF…');
+  try{
+    const D=computeSummary(),{jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4',compress:true});
+    const W=210,H=297,M=20,CW=W-2*M,TOP=31,BOT=H-20;
+    const CH=[74,74,74],GOLD=[204,167,53],GOLDD=[169,134,42],INK=[42,42,40],MUTED=[110,109,102],LINE=[217,213,200],CREAM=[245,243,238];
+    const logoSrc=$('header.app img').src,LR=640/170,today=new Date().toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'});
+    let y=TOP,sn=0,stripe=0;
+    const font=(s,fs,c=INK)=>{doc.setFont('helvetica',s);doc.setFontSize(fs);doc.setTextColor(...c)};
+    const lh=fs=>fs*.3528*1.42;
+    const header=()=>{doc.setFillColor(...CH);doc.rect(M,8,CW,14,'F');doc.setFillColor(...GOLD);doc.rect(M,22,CW,.7,'F');doc.addImage(logoSrc,'PNG',M+3,10,10*LR,10);
+      font('bold',8.5,GOLD);doc.text(pdfT(D.form+' Summary'),W-M-3,13.8,{align:'right'});font('normal',7.5,[235,232,222]);doc.text(pdfT(today),W-M-3,18.6,{align:'right'})};
+    const newPage=()=>{doc.addPage();header();y=TOP;stripe=0};
+    const need=h=>{if(y+h>BOT)newPage()};
+    await drawCoverPdf(doc,D.form+' Summary',await pickCover({}));doc.addPage();
+    header();
+    font('bold',22,CH);doc.text(pdfT(D.form+' Summary'),M,y+7);y+=11;
+    font('normal',9.5,MUTED);{const L=doc.splitTextToSize(pdfT(D.filters),CW);doc.text(L,M,y+3.5);y+=L.length*lh(9.5)+1}
+    font('normal',9.5,MUTED);doc.text(`${D.reps.length} report${D.reps.length===1?'':'s'} included`,M,y+3.5);y+=6;
+    doc.setFillColor(...GOLD);doc.rect(M,y,18,.8,'F');y+=2;
+    const heading=txt=>{sn++;need(26);y+=5;font('bold',13,GOLD);doc.text(sn+'.0',M,y+4.5);font('bold',13,CH);doc.text(pdfT(txt).slice(0,70),M+13,y+4.5);y+=7.5;doc.setDrawColor(...LINE);doc.setLineWidth(.25);doc.line(M,y,W-M,y);y+=3;stripe=0};
+    const table=(tb)=>{
+      if(tb.title){need(16);y+=2;font('bold',10,GOLDD);doc.text(pdfT(tb.title),M,y+3.5);y+=6}
+      const n=tb.head.length,first=n>=5?CW*.30:n===4?CW*.36:CW*.5,rest=(CW-first)/(n-1),cw=tb.head.map((_,i)=>i?rest:first);
+      const x0=i=>M+cw.slice(0,i).reduce((a,b)=>a+b,0);
+      const max=tb.bar!==undefined?Math.max(0,...tb.rows.map(r=>parseFloat(r[tb.bar])||0)):0;
+      const drawHead=()=>{font('bold',8,[255,255,255]);const HL=tb.head.map((h,i)=>doc.splitTextToSize(pdfT(h),cw[i]-4).slice(0,3)),hh=Math.max(...HL.map(l=>l.length))*3.4+3.6;need(hh+7);doc.setFillColor(...CH);doc.rect(M,y,CW,hh,'F');font('bold',8,[255,255,255]);
+        HL.forEach((L,i)=>L.forEach((l,j)=>i?doc.text(l,x0(i)+cw[i]-2,y+4.6+j*3.4,{align:'right'}):doc.text(l,M+2.5,y+4.6+j*3.4)));y+=hh;stripe=0};
+      drawHead();
+      tb.rows.forEach(r=>{
+        font('normal',8.6);const cells=r.map((c,i)=>doc.splitTextToSize(pdfT(c),cw[i]-5));const h=Math.max(...cells.map(c=>c.length))*lh(8.6)+3;
+        if(y+h>BOT){newPage();drawHead()}
+        if(stripe%2===0){doc.setFillColor(...CREAM);doc.rect(M,y,CW,h,'F')}
+        doc.setDrawColor(...LINE);doc.setLineWidth(.15);doc.line(M,y+h,W-M,y+h);
+        cells.forEach((c,i)=>{font(i===0?'bold':'normal',8.6);i?doc.text(c,x0(i)+cw[i]-2,y+4,{align:'right'}):doc.text(c,M+2.5,y+4)});
+        if(tb.bar!==undefined&&max&&r[0]!=='Total'){const v=parseFloat(r[tb.bar])||0,bw=Math.max(0,(cw[tb.bar]-6)*v/max);doc.setFillColor(...GOLD);doc.rect(x0(tb.bar)+3,y+h-1.7,bw,.9,'F')}
+        y+=h;stripe++});
+      y+=4;stripe=0};
+    for(const b of D.blocks){
+      heading(b.title);
+      if(b.note){font('normal',8.6,MUTED);const L=doc.splitTextToSize(pdfT(b.note),CW-4);need(L.length*lh(8.6)+2);doc.setFillColor(...GOLD);doc.rect(M,y+.5,.8,L.length*lh(8.6)+.5,'F');L.forEach(l=>{doc.text(l,M+3,y+3.4);y+=lh(8.6)});y+=2.5}
+      if(b.tables.length)b.tables.forEach(table);else{font('normal',9,MUTED);doc.text(pdfT(b.empty||'No data.'),M,y+4);y+=8}
+      for(const c of (b.charts||[])){const cv=chartCanvas(c),h=CW*cv.height/cv.width;need(h+4);doc.addImage(cv.toDataURL('image/png'),'PNG',M,y,CW,h,undefined,'FAST');y+=h+5}
+    }
+    const total=doc.getNumberOfPages();for(let p=2;p<=total;p++){doc.setPage(p);font('normal',7.8,MUTED);doc.text(pdfT(`Keystone Conservation Pty Ltd  |  ${D.form} Summary  |  Page ${p-1}`),M,H-10)}
+    const blob=doc.output('blob'),nm=`${D.form} Summary - ${new Date().toISOString().slice(0,10)}.pdf`;
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=nm;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    window.__lastSum={name:nm,size:blob.size,blob};toast('PDF ready — '+nm);
+  }catch(err){console.error(err);toast('Couldn’t build the PDF: '+(err&&err.message||err),true)}
+}
+
+/* =====================================================================
+   Word (.docx) export — hand-built OOXML + minimal zip writer
+   ===================================================================== */
+const _crcT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=u=>{let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=_crcT[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0};
+const u8=s=>new TextEncoder().encode(s);
+const dataU8=d=>{const b=atob(d.split(',')[1]),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u};
+function zipStore(files){
+  const parts=[],cen=[];let off=0;
+  const w16=(a,v)=>a.push(v&255,(v>>8)&255),w32=(a,v)=>a.push(v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255);
+  files.forEach(f=>{const nm=u8(f.name),crc=crc32(f.data),h=[];
+    w32(h,0x04034b50);w16(h,20);w16(h,0);w16(h,0);w16(h,0);w16(h,0x21);w32(h,crc);w32(h,f.data.length);w32(h,f.data.length);w16(h,nm.length);w16(h,0);
+    parts.push(new Uint8Array(h),nm,f.data);
+    const c=[];w32(c,0x02014b50);w16(c,20);w16(c,20);w16(c,0);w16(c,0);w16(c,0);w16(c,0x21);w32(c,crc);w32(c,f.data.length);w32(c,f.data.length);w16(c,nm.length);w16(c,0);w16(c,0);w16(c,0);w16(c,0);w32(c,0);w32(c,off);
+    cen.push(new Uint8Array(c),nm);off+=h.length+nm.length+f.data.length});
+  let cl=0;cen.forEach(p=>cl+=p.length);const e=[];w32(e,0x06054b50);w16(e,0);w16(e,0);w16(e,files.length);w16(e,files.length);w32(e,cl);w32(e,off);w16(e,0);
+  return new Blob([...parts,...cen,new Uint8Array(e)],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+}
+const xe=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+async function exportSummaryDocx(){
+  toast('Building Word document…');
+  try{
+    const D=computeSummary(),title=D.form+' Summary',media=[];let rid=10,did=1;
+    const addImg=(dataUrl,ext)=>{const id='rId'+(rid++),name='image'+(media.length+1)+'.'+ext;media.push({name,data:dataU8(dataUrl),id});return id};
+    const run=(t,o={})=>`<w:r><w:rPr>${o.font?`<w:rFonts w:ascii="${o.font}" w:hAnsi="${o.font}"/>`:''}${o.b?'<w:b/>':''}${o.i?'<w:i/>':''}${o.color?`<w:color w:val="${o.color}"/>`:''}${o.sz?`<w:sz w:val="${o.sz}"/>`:''}</w:rPr><w:t xml:space="preserve">${xe(t)}</w:t></w:r>`;
+    const para=(runs,o={})=>`<w:p><w:pPr>${o.style?`<w:pStyle w:val="${o.style}"/>`:''}${o.keep?'<w:keepNext/>':''}${o.border?'<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="2" w:color="D9D5C8"/></w:pBdr>':''}${o.shd?`<w:shd w:val="clear" w:color="auto" w:fill="${o.shd}"/>`:''}<w:spacing w:before="${o.before??0}" w:after="${o.after??120}"${o.line?` w:line="${o.line}" w:lineRule="auto"`:''}/>${o.jc?`<w:jc w:val="${o.jc}"/>`:''}</w:pPr>${runs}</w:p>`;
+    const drawing=(id,cx,cy,name)=>`<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${did++}" name="${name}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+    const TW=9638;
+    const tbl=tb=>{
+      const n=tb.head.length,first=n>=5?.30:n===4?.36:.5,widths=tb.head.map((_,i)=>Math.round(TW*(i?(1-first)/(n-1):first)));
+      const cell=(t,i,o)=>`<w:tc><w:tcPr><w:tcW w:w="${widths[i]}" w:type="dxa"/>${o.fill?`<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>`:''}<w:tcMar><w:top w:w="40" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0"/>${i?'<w:jc w:val="right"/>':''}</w:pPr>${run(t,{b:o.b||i===0,color:o.color,sz:17})}</w:p></w:tc>`;
+      let x=`<w:tbl><w:tblPr><w:tblW w:w="${TW}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:bottom w:val="single" w:sz="4" w:space="0" w:color="D9D5C8"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="D9D5C8"/></w:tblBorders></w:tblPr><w:tblGrid>${widths.map(w=>`<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+      x+=`<w:tr><w:trPr><w:tblHeader/></w:trPr>${tb.head.map((h,i)=>cell(h,i,{fill:'4A4A4A',color:'FFFFFF',b:1})).join('')}</w:tr>`;
+      tb.rows.forEach((r,ri)=>{x+=`<w:tr><w:trPr><w:cantSplit/></w:trPr>${r.map((c,i)=>cell(c,i,{fill:ri%2===0?'F5F3EE':''})).join('')}</w:tr>`});
+      return x+'</w:tbl>'+para('',{after:80});
+    };
+    let body='';
+    // cover section
+    const cov=await coverFullDataURL(title,await pickCover({}));
+    const cid=addImg(cov,'jpg');
+    body+=`<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:sz w:val="2"/></w:rPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:pPr><w:r>${drawing(cid,7560000,10650000,'Cover')}</w:r></w:p>`;
+    // title
+    body+=para(run(title,{b:1,sz:48,color:'4A4A4A'}),{after:60});
+    body+=para(run(D.filters,{sz:19,color:'6E6D66'}),{after:40});
+    body+=para(run(`${D.reps.length} report${D.reps.length===1?'':'s'} included  ·  ${new Date().toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'})}`,{sz:19,color:'6E6D66'}),{after:200,border:1});
+    let sn=0;
+    const notes=(label)=>para(run('Notes  ',{b:1,color:'A9862A',sz:20})+run('['+label+']',{i:1,color:'8A8A82',sz:19}),{before:160,after:200,shd:'FBF9F2'});
+    for(const b of D.blocks){
+      sn++;
+      body+=para(run(sn+'.0  ',{b:1,color:'CCA735'})+run(b.title,{b:1}),{style:'Heading1',keep:1});
+      if(b.note)body+=para(run(b.note,{i:1,color:'6E6D66',sz:18}),{after:100});
+      if(b.tables.length)b.tables.forEach(tb=>{if(tb.title)body+=para(run(tb.title,{b:1,color:'A9862A',sz:20}),{style:'Heading2',keep:1});body+=tbl(tb)});
+      else body+=para(run(b.empty||'No data.',{color:'6E6D66'}));
+      for(const c of (b.charts||[])){const cv=chartCanvas(c),id=addImg(cv.toDataURL('image/png'),'png'),cx=6120000,cy=Math.round(cx*cv.height/cv.width);body+=para(`<w:r>${drawing(id,cx,cy,c.title)}</w:r>`,{after:120,jc:'center'})}
+      body+=notes('Add notes on '+b.title.toLowerCase()+' here');
+    }
+    sn++;body+=para(run(sn+'.0  ',{b:1,color:'CCA735'})+run('Site-specific notes',{b:1}),{style:'Heading1',keep:1});
+    const st=sumState(),siteList=st.sites.length?st.sites:[...new Set(D.reps.map(r=>siteOf(r)).filter(Boolean))].sort();
+    (siteList.length?siteList:['General']).forEach(s=>{body+=para(run(s,{b:1,color:'A9862A',sz:22}),{style:'Heading2',keep:1})+para(run('[Add notes for this site here]',{i:1,color:'8A8A82',sz:19}),{after:240})});
+    // logo for header
+    const lid=addImg($('header.app img').src,'png');
+    const sect=`<w:sectPr><w:headerReference w:type="default" r:id="rIdH"/><w:footerReference w:type="default" r:id="rIdF"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1701" w:right="1134" w:bottom="1134" w:left="1134" w:header="454" w:footer="567" w:gutter="0"/><w:pgNumType w:start="1"/></w:sectPr>`;
+    const NS='xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"';
+    const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${body}${sect}</w:body></w:document>`;
+    const header=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${NS}><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="1" w:color="CCA735"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="4A4A4A"/><w:tabs><w:tab w:val="right" w:pos="9638"/></w:tabs><w:spacing w:before="0" w:after="0"/></w:pPr><w:r>${drawing(lid,Math.round(9*(640/170)*36000),9*36000,'Logo')}</w:r><w:r><w:tab/></w:r>${run(title,{b:1,color:'CCA735',sz:17})}</w:p></w:hdr>`;
+    const footer=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${NS}><w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>${run('Keystone Conservation Pty Ltd  |  '+title+'  |  Page ',{sz:15,color:'6E6D66'})}<w:r><w:rPr><w:sz w:val="15"/><w:color w:val="6E6D66"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="15"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:rPr><w:sz w:val="15"/></w:rPr><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:sz w:val="15"/><w:color w:val="6E6D66"/></w:rPr><w:t>1</w:t></w:r><w:r><w:rPr><w:sz w:val="15"/></w:rPr><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>`;
+    const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="20"/><w:lang w:val="en-AU"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="3" w:color="D9D5C8"/></w:pBdr><w:spacing w:before="360" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="4A4A4A"/><w:sz w:val="30"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="80"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="A9862A"/><w:sz w:val="22"/></w:rPr></w:style></w:styles>`;
+    const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`;
+    const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+    const IMG='http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',R='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    const drel=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdS" Type="${R}/styles" Target="styles.xml"/><Relationship Id="rIdH" Type="${R}/header" Target="header1.xml"/><Relationship Id="rIdF" Type="${R}/footer" Target="footer1.xml"/>${media.filter(m=>m.id!==lid).map(m=>`<Relationship Id="${m.id}" Type="${IMG}" Target="media/${m.name}"/>`).join('')}</Relationships>`;
+    const lm=media.find(m=>m.id===lid),hrel=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="${lid}" Type="${IMG}" Target="media/${lm.name}"/></Relationships>`;
+    const files=[{name:'[Content_Types].xml',data:u8(ct)},{name:'_rels/.rels',data:u8(rels)},{name:'word/document.xml',data:u8(doc)},{name:'word/styles.xml',data:u8(styles)},{name:'word/header1.xml',data:u8(header)},{name:'word/footer1.xml',data:u8(footer)},{name:'word/_rels/document.xml.rels',data:u8(drel)},{name:'word/_rels/header1.xml.rels',data:u8(hrel)},...media.map(m=>({name:'word/media/'+m.name,data:m.data}))];
+    const blob=zipStore(files),nm=`${D.form} Summary - ${new Date().toISOString().slice(0,10)}.docx`;
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=nm;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    window.__lastDocx={name:nm,size:blob.size,blob};toast('Word file ready — '+nm);
+  }catch(err){console.error(err);toast('Couldn’t build the Word file: '+(err&&err.message||err),true)}
+}
 
 render();
 </script>
