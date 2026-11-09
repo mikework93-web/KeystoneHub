@@ -2441,6 +2441,20 @@ const KS_SEED={"contracts":[{"id":"co9y1z","name":"Brilliante","po":"","gname":"
 .dy-row .n{flex:1;min-width:0;font-weight:700}.dy-row .n small{display:block;font-weight:400;color:var(--muted);font-size:12px}
 .dy-row input{width:76px;text-align:right}
 .mg.wf input{width:62px}.mg.wf input[type=date]{width:128px}.mg.wf small{color:var(--muted);font-weight:400;margin-left:4px}.wf-ov input{border-color:#d9822b}.wf-neg{color:#b5432a;font-weight:700}.mg.wf tr.wf-ok td{background:#c9e8c9;color:#17421b}.mg.wf tr.wf-go td{background:#fbe8a0;color:#4a3a00}.mg.wf tr.wf-ok input,.mg.wf tr.wf-go input{background:rgba(255,255,255,.65)}
+.mmw{overflow:auto;max-height:72vh;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+.mm{border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:100%}
+.mm th,.mm td{padding:3px 7px;text-align:right;white-space:nowrap;border-bottom:1px solid #eee7d4}
+.mm thead th{position:sticky;top:0;background:#3a3a3a;color:#d9b347;z-index:3;font-size:11.5px}
+.mm .mm-n{position:sticky;left:0;z-index:2;background:var(--card);text-align:left;min-width:118px;max-width:150px;white-space:normal;vertical-align:top;border-right:1px solid var(--border);cursor:pointer}
+.mm thead .mm-n{z-index:4;background:#3a3a3a}
+.mm .mm-n b{display:block}.mm .mm-n small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+.mm .mm-l{text-align:left;color:var(--muted);font-size:11.5px;position:sticky;left:118px;z-index:1;background:var(--card);padding-right:10px}
+.mm-cl td{background:#efe3b8;font-weight:700;text-align:left;position:sticky;left:0}
+.mm-q td:not(.mm-n):not(.mm-nr){background:#f6f1df}.mm-q .mm-l{background:#f6f1df}
+.mm-a td{border-bottom:2px solid #d8cfb0;color:var(--muted)}
+.mm .mm-t{font-weight:700}.mm .mm-cur{box-shadow:inset 0 0 0 100px rgba(217,179,71,.13)}
+.mm .mm-nr{white-space:normal;min-width:220px;max-width:320px;text-align:left;vertical-align:top;font-size:11.5px;color:var(--muted)}
+.mm input{width:46px;font:inherit;font-size:12.5px;padding:0 2px;margin:0;height:auto;text-align:right;background:transparent;border:1px solid transparent}.mm input:focus{background:#fff;border-color:var(--gold)}
 .staff-row .cas{font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap}
 .staff-row{grid-template-columns:auto 1fr 1fr auto auto}
 @media(max-width:700px){.staff-row .cas{grid-column:2/3}}
@@ -2648,14 +2662,24 @@ function vDaily(){
    ${html||'<div class="hint">Nothing scheduled on this day.</div>'}
    ${edit?`<div class="fld" style="margin-top:10px"><label>Add another job</label><div style="display:flex;gap:6px;flex-wrap:wrap"><select id="dyAdd" style="flex:1;min-width:150px"><option value="">Choose a contract…</option>${S.contracts.slice().sort((a,b)=>cName(a).localeCompare(cName(b))).map(c=>`<option value="${c.id}">${esc(cName(c))}${c.po?' · '+esc(c.po):''}</option>`).join('')}</select><input id="dyNew" placeholder="…or job name (no PO)" style="flex:1;min-width:140px"><button class="btn" data-cn="dadd">Add</button></div></div>`:''}`}
 function vMaster(){
-  const edit=canEdit(),q=norm(UI.con.q),f=FYM();
-  const list=S.contracts.slice().sort((a,b)=>(a.client||'').localeCompare(b.client||'')||cName(a).localeCompare(cName(b))).filter(c=>!q||norm([c.name,c.po,c.client,...(c.aliases||[])].join(' ')).includes(q));
+  const edit=canEdit(),q=norm(UI.con.q),f=FYM(),cm=curMonth();
+  const list=S.contracts.filter(c=>!q||norm([c.name,c.po,c.client,...(c.aliases||[])].join(' ')).includes(q));
+  const tot=a=>hr(a.reduce((x,y)=>x+num(y),0)),mon=n=>n?'$'+Math.round(n).toLocaleString('en-AU'):'';
+  let last=null,body='';
+  for(const c of list){
+    const qs=f.map((m,i)=>num((c.q||[])[i])),sp=f.map(m=>hoursIn(c,m)),qt=qs.reduce((a,b)=>a+b,0),st=sp.reduce((a,b)=>a+b,0);
+    let invT=0,exT=0;const inv=f.map(m=>{const ex=c.pia?0:hoursIn(c,m)*num(c.rate)+otherIn(c.id,m),s2=invState(c,m).st;exT+=ex;if(s2==='done')invT+=ex;return {ex,done:s2==='done'}});
+    if(c.client!==last){body+=`<tr class="mm-cl"><td colspan="${f.length+5}">${esc(c.client||'No client')}</td></tr>`;last=c.client}
+    const cur=m=>m===cm?' mm-cur':'';
+    body+=`<tr class="mm-q"><td class="mm-n" rowspan="4" data-cn="csheet" data-c="${c.id}"><b>${esc(cName(c))}</b>${c.pia?'<small>Paid in advance</small>':''}${num(c.value)?`<small>${money(num(c.value))}</small>`:''}${c.po?`<small>${esc(c.po)}</small>`:''}${groupOf(c).length>1&&(groupOf(c).find(x=>x.gname)||{}).gname?`<small>${esc(groupOf(c).find(x=>x.gname).gname)}</small>`:''}</td><td class="mm-l">Quoted</td>
+      ${f.map((m,i)=>`<td class="${cur(m)}">${edit?`<input type="number" step="0.5" value="${qs[i]||''}" data-cn-in="mq" data-c="${c.id}" data-i="${i}">`:(qs[i]||'')}</td>`).join('')}<td class="mm-t">${hr(qt)}</td><td></td><td class="mm-nr" rowspan="4">${esc(c.narr||'')}</td></tr>
+     <tr class="mm-s"><td class="mm-l">Spent</td>${sp.map((v,i)=>`<td class="${cur(f[i])}">${v?hr(v):''}</td>`).join('')}<td class="mm-t">${hr(st)}</td><td class="mm-t">${hr(qt-st)}</td></tr>
+     <tr class="mm-i"><td class="mm-l">Invoice</td>${inv.map((x,i)=>`<td class="${cur(f[i])} ${x.done?'inv-g':''}">${c.pia?'':mon(x.ex)}</td>`).join('')}<td class="mm-t"><span class="inv-g">${c.pia?'':mon(invT)}</span>${!c.pia&&exT-invT>0.5?` <span>${mon(exT-invT)}</span>`:''}</td><td class="mm-t">${num(c.value)&&!c.pia?mon(num(c.value)-exT):''}</td></tr>
+     <tr class="mm-a"><td class="mm-l">Avail.</td>${f.map((m,i)=>`<td class="${cur(m)}">${hr(availAfter(c,i))}</td>`).join('')}<td></td><td></td></tr>`}
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input data-cn-q placeholder="Search name, PO or client" value="${esc(UI.con.q)}" style="flex:1;min-width:160px">
    ${edit?`<button class="btn gold" data-cn="cnew">+ Contract</button><label class="btn" style="cursor:pointer">Import spreadsheet<input type="file" accept=".xlsx" hidden data-cn-file></label><button class="btn" data-cn="days">Non-working days</button><button class="btn" data-cn="wseed">Load Keystone data</button>`:''}</div>
-  ${list.map(c=>{const q=(c.q||[]).reduce((a,b)=>a+num(b),0),sp=f.reduce((a,m)=>a+hoursIn(c,m),0);let inv=0,pend=0;f.forEach(m=>{const s=invState(c,m);if(s.st==='done')inv+=invAmt(c,m);else if(s.st==='todo'){pend+=siteUnbilled(c,m);inv+=invAmt(c,m)-siteUnbilled(c,m)}});
-    return `<div class="cn-row" data-cn="csheet" data-c="${c.id}"><div class="t"><span>${esc(cName(c))}${c.po?` <small style="font-weight:400;color:var(--muted)">${esc(c.po)}</small>`:''}</span>${c.pia?'<span class="chip-s pia">Paid in advance</span>':c.client?`<span class="chip-s">${esc(c.client)}</span>`:''}</div>
-    <div class="s">Quoted ${hr(q)} h · Spent ${hr(sp)} h · Remaining ${hr(q-sp)} h${c.pia?'':` · Invoiced <span class="inv-g">${money(inv)}</span>${pend?` · To invoice <span class="inv-k">${money(pend)}</span>`:''}`}</div></div>`}).join('')||'<div class="hint">No contracts yet. Tap Import spreadsheet.</div>'}`}
-
+  <div class="mmw"><table class="mm"><thead><tr><th class="mm-n">Contract</th><th class="mm-l"></th>${MN.map(m=>`<th>${m.toUpperCase()}</th>`).join('')}<th>Total</th><th>Remaining</th><th>Invoice narration</th></tr></thead><tbody>${body||`<tr><td colspan="${f.length+5}" style="text-align:left">No contracts yet. Tap Import spreadsheet.</td></tr>`}</tbody></table></div>
+  <div class="hint">Tap a contract name for its detail and to edit it. Invoice amounts are ex GST: <span class="inv-g">green</span> = invoice ticked off in To Do, black = still to invoice. Quoted hours can be edited here; Spent comes from the daily hours.</div>`}
 /* ---------- sheets ---------- */
 function contractSheet(cid){
   const c=contractById(cid);if(!c)return;UI.cs=cid;const f=FYM(),edit=canEdit();
@@ -2758,6 +2782,7 @@ document.addEventListener('change',async e=>{
         if(k==='wspent')setMonthSpent(cc,mk,v);
         else wfSet(cc.id,mk,k==='wdue'?{due:v}:k==='wbud'?{budget:v===''?null:num(v)}:{notes:v})}
       render()}
+    if(k==='mq'){const cc=contractById(t.dataset.c);if(cc){cc.q=cc.q||Array(12).fill(0);cc.q[+t.dataset.i]=num(t.value);save();render()}}
     if(k==='o'){setOther(t.dataset.c,t.dataset.m,t.value);contractSheet(t.dataset.c);render()}}
   if(t.matches('[data-cn-q]')){UI.con.q=t.value;render()}
   if(t.matches('[data-cn-wffile]')&&t.files[0]){try{await importWorkflow(t.files[0])}catch(err){console.error(err);toast('Import failed: '+(err.message||err),true)}t.value=''}
