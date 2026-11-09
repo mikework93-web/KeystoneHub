@@ -187,6 +187,9 @@ td.cell:hover .addc,td.cell:focus-within .addc{opacity:1}
 .sheet{position:fixed;z-index:210;left:0;right:0;bottom:0;max-height:94vh;background:var(--card);border-radius:22px 22px 0 0;
   display:flex;flex-direction:column;box-shadow:var(--shadow-lg);animation:up .22s ease-out;border-top:4px solid var(--gold)}
 .sheet .sh-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px 10px}
+.sheet{max-height:calc(100vh - 64px);max-height:calc(100dvh - 64px - env(safe-area-inset-top))}
+.sheet .sh-hd .icon-btn{width:44px;height:44px;flex:none;background:var(--gold)!important;color:var(--charcoal-deep)!important;border-color:var(--gold)!important}
+.sheet .sh-hd .icon-btn svg{width:22px;height:22px}
 .sheet .sh-hd h2{margin:0;font-size:18px;font-weight:800}
 .sheet .sh-bd{overflow:auto;padding:4px 18px 18px;flex:1}
 .sheet .sh-ft{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--border);background:var(--card)}
@@ -1170,7 +1173,7 @@ function menuSheet(){
    <button class="menu-item" data-act="theme">${icon('moon')}<span>Theme<small>Currently ${dark?'dark':'light'} — tap to switch</small></span></button>
    <button class="menu-item" data-act="backup">${icon('data')}<span>Backup / restore<small>Copy or paste your data</small></span></button>
    <button class="menu-item" data-act="clearall">${icon('trash')}<span>Clear sample data<small>Remove all jobs and tasks, keep staff</small></span></button>
-   <div class="hint" style="text-align:center;margin-top:10px">Keystone Ops · build ${BUILD_VERSION} · data is stored on this device</div></div>`,{narrow:true});
+   <div class="hint" style="text-align:center;margin-top:10px">Keystone Ops · build ${BUILD_VERSION} · data is stored on this device</div></div><div class="sh-ft"><button class="btn gold sp-grow" data-act="close">Close</button></div>`,{narrow:true});
 }
 function staffSheet(){
   sheet(`<div class="sh-hd"><h2>Staff &amp; roles</h2><button class="icon-btn" style="background:var(--cream);color:var(--ink);border-color:var(--border)" data-act="close">${icon('x')}</button></div><div class="sh-bd">
