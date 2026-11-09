@@ -276,10 +276,7 @@ table.skel tr:nth-child(odd) .bar{background:var(--cream)}
 .yn{display:flex;gap:6px;flex-wrap:wrap}
 .yn button{flex:1;min-width:64px;border:1.5px solid var(--border);background:var(--field);border-radius:10px;padding:9px 10px;font-weight:700;font-size:13px;color:var(--ink)}
 .yn.wrap button{flex:1 1 44%}
-.yn button.on.y{background:#00a36c;border-color:#00a36c;color:#fff}
-.yn button.on.n{background:#cd3232;border-color:#cd3232;color:#fff}
-.yn button.on.am{background:#d9961e;border-color:#d9961e;color:#fff}
-.yn button.on.na{background:#787874;border-color:#787874;color:#fff}
+.yn button.on{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 18%,var(--field));color:var(--ink);font-weight:800}
 .chips.scrollbox{max-height:230px;overflow:auto;padding:2px}
 .chk{display:flex;gap:10px;align-items:center;font-weight:700;font-size:13.5px}
 .chk input{width:20px;height:20px;accent-color:var(--gold-dark)}
@@ -1709,7 +1706,7 @@ async function makePdf(r){
      case 'date':if(v)row(label(it),v);break;
      case 'staff1':if(v)row(label(it),staffName(v));break;
      case 'staffN':if((v||[]).length)row(label(it),v.map(staffName).join(', '));break;
-     case 'select':if(v)row(label(it),v,/^(no|non-compliant)$/i.test(v)?{bold:true,color:RED}:/improvement/i.test(v)?{bold:true,color:GOLDD}:{});break;
+     case 'select':if(v)row(label(it),v);break;
      case 'multi':case 'species':if((v||[]).length)row(label(it),joinv(v));break;
      case 'check':if(v)row(label(it),'Yes');break;
      case 'risk':if(v&&v.l&&v.c)row(label(it),riskText(v));break;
@@ -1733,9 +1730,17 @@ async function makePdf(r){
     if(title)heading(title.replace(/:$/,''));
     s.items.forEach(it=>emit(it,r,t.id));
   });
-  if(order.length){heading('Photo record');
+  if(order.length){newPage();heading('Appendices');
     const all=[];const walk=(c,items)=>items.forEach(it=>{if(!isVis(r,c,t.id,it))return;if(it.t==='repeat'){(r.d[it.k]||[]).forEach(rw=>walk(rw,it.items))}else((c.m||{})[it.k]||[]).forEach(a=>all.push({id:a.id,cap:label(it).replace(/:$/,'')}))});
-    t.sections.forEach(s=>walk(r,s.items));figs(all)}
+    t.sections.forEach(s=>walk(r,s.items));
+    const bw=(CW-6)/2,cellH=112,bh=104,y0=y+1;
+    all.filter(f=>photos[f.id]).forEach((f,i)=>{
+      const k=i%4;if(i>0&&k===0){newPage();y=TOP}
+      const base=(i<4?y0:TOP+1),col=k%2,rw=Math.floor(k/2),x=M+col*(bw+6),yy=base+rw*cellH;
+      const p=photos[f.id],s=Math.min(bw/p.w,bh/p.h),w=p.w*s,h=p.h*s;
+      doc.addImage(p.data,'JPEG',x+(bw-w)/2,yy,w,h,undefined,'FAST');
+      font('normal',7.8,MUTED);const cap=doc.splitTextToSize(pdfT('Photo '+num[f.id]+'. '+f.cap),bw);doc.text(cap.slice(0,2),x,yy+h+3.6);
+    });stripe=0}
   const total=doc.getNumberOfPages(),firstP=t.cover?2:1;
   for(let p=firstP;p<=total;p++){doc.setPage(p);font('normal',7.8,MUTED);doc.text(pdfT(`Keystone Conservation Pty Ltd  |  ${t.name}${site?' – '+site:''}  |  Page ${p-firstP+1}`),M,H-10)}
   return doc.output('blob');
