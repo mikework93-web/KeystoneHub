@@ -2440,7 +2440,7 @@ const KS_SEED={"contracts":[{"id":"co9y1z","name":"Brilliante","po":"","gname":"
 .dy-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .dy-row .n{flex:1;min-width:0;font-weight:700}.dy-row .n small{display:block;font-weight:400;color:var(--muted);font-size:12px}
 .dy-row input{width:76px;text-align:right}
-.mg.wf input{width:62px}.mg.wf input[type=date]{width:128px}.mg.wf small{color:var(--muted);font-weight:400;margin-left:4px}.wf-ov input{border-color:#d9822b}.wf-neg{color:#b5432a;font-weight:700}.wf-ok td:first-child{color:#1d6b26}
+.mg.wf input{width:62px}.mg.wf input[type=date]{width:128px}.mg.wf small{color:var(--muted);font-weight:400;margin-left:4px}.wf-ov input{border-color:#d9822b}.wf-neg{color:#b5432a;font-weight:700}.mg.wf tr.wf-ok td{background:#c9e8c9;color:#17421b}.mg.wf tr.wf-go td{background:#fbe8a0;color:#4a3a00}.mg.wf tr.wf-ok input,.mg.wf tr.wf-go input{background:rgba(255,255,255,.65)}
 .staff-row .cas{font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap}
 .staff-row{grid-template-columns:auto 1fr 1fr auto auto}
 @media(max-width:700px){.staff-row .cas{grid-column:2/3}}
@@ -2609,11 +2609,11 @@ function vWorkflow(){
   <div class="mgw"><table class="mg wf"><thead><tr><th>Job</th><th>Budget</th><th>Due</th><th>Spent</th><th>Remaining</th><th style="text-align:left">Notes</th>${edit?'<th></th>':''}</tr></thead><tbody>
   ${st.rows.map(r=>{const id=r.oneoff?`data-w="${r.w.id}"`:`data-c="${r.c.id}"`,nm=r.oneoff?esc(r.w.name||'(one-off)')+' <small>one-off</small>':esc(cName(r.c))+(r.c.po?` <small>${esc(r.c.po)}</small>`:'')+(r.c.pia?' <small>PIA</small>':''),ov=!r.oneoff&&r.w.budget!=null;
    const inp=(k,v,t,ex)=>edit?`<input ${t||'type="number" step="0.5" min="0"'} value="${esc(v)}" data-cn-in="${k}" ${id} ${ex||''}>`:esc(t&&t.includes('date')?(v?shortD(v):''):v);
-   return `<tr class="${r.status==='Complete'?'wf-ok':''}"><td>${r.oneoff?nm:`<a href="#" data-cn="hsheet" data-c="${r.c.id}" style="color:inherit;text-decoration:none">${nm}</a>`}</td>
+   return `<tr class="${r.status==='Complete'?'wf-ok':r.status==='In progress'?'wf-go':''}"><td>${r.oneoff?nm:`<a href="#" data-cn="hsheet" data-c="${r.c.id}" style="color:inherit;text-decoration:none">${nm}</a>`}</td>
    <td class="${ov?'wf-ov':''}">${inp('wbud',r.budget||'')}</td><td>${inp('wdue',r.due,'type="date"')}</td><td>${inp('wspent',r.spent||'')}</td>
    <td class="${r.remain<0?'wf-neg':''}">${hr(r.remain)}</td><td style="text-align:left">${inp('wnote',r.notes,'type="text" placeholder="note"','style="width:150px;text-align:left"')}</td>${edit?`<td>${r.oneoff?`<button class="icon-btn" data-cn="wdel" data-w="${r.w.id}" aria-label="Delete">${icon('x')}</button>`:''}</td>`:''}</tr>`}).join('')||`<tr><td colspan="7" style="text-align:left">No contracts for this month yet. Import your contract spreadsheet from Contract master, or tap + Add job.</td></tr>`}
   </tbody></table></div>
-  <div class="hint">Type Spent as the month's total. It is stored against yesterday's date (or the last day of a past month), so use the job name for day-by-day entry. Budget and Due default from the contract and the schedule; typing a value overrides them for this month only, and clearing it goes back to the default. Orange budget = overridden.</div>`}
+  <div class="hint">Type Spent as the month's total. It is stored against yesterday's date (or the last day of a past month), so use the job name for day-by-day entry. Budget and Due default from the contract and the schedule; typing a value overrides them for this month only, and clearing it goes back to the default. Orange budget = overridden. Green row = complete, yellow row = in progress.</div>`}
 const shortD=ds=>{const d=parse(ds);return d.getDate()+' '+MN[(d.getMonth()+6)%12]};
 function vDaily(){
   const C=UI.con,d=C.date,rows=new Map();
