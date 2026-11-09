@@ -803,22 +803,10 @@ function demo(){
             {id:'s3',name:'Jordan',role:'Field Officer',color:STAFF_COLORS[2]},{id:'s4',name:'Riley',role:'Field Officer',color:STAFF_COLORS[3]}];
   const brief=(loc,tl,rep,veh,start,b,bud,fu)=>`Location: ${loc}\nTeam Leader: ${tl}\nReporting: ${rep}\nVehicle: ${veh}\nNH Start time: ${start}\nBrief: ${b}\nBudget Allocation: ${bud}\nFollow up timing: ${fu}`;
   return {v:1,staff:st,
-   jobs:[
-    {id:'j1',title:'Sample reserve – weed control',date:addDays(ws,0),start:'07:00',end:'15:30',staff:['s1','s3'],color:COLORS[1],status:'scheduled',published:true,att:[],rec:null,exc:{},
-      brief:brief('Sample Reserve, north entry','Alex','Daily works report by 4pm','Ute 2','07:30','Spot spray woody weeds along the creek line.','32 hrs','Return in 4 weeks')},
-    {id:'j2',title:'Weekly site inspection',date:addDays(ws,1),start:'09:00',end:'12:00',staff:['s2'],color:COLORS[2],status:'scheduled',published:true,att:[],rec:{freq:'weekly',days:[1],until:''},exc:{},
-      brief:brief('Various','Sam','Weekly summary email','Ute 1','09:00','Walk the sites and record condition.','3 hrs','Weekly')},
-    {id:'j3',title:'Planting – stage 2',date:addDays(ws,2),start:'07:30',end:'15:00',staff:['s1','s2','s4'],color:COLORS[0],status:'scheduled',published:false,att:[],rec:null,exc:{},
-      brief:brief('Sample Wetland','Alex','Photos + plant counts','Tipper','07:30','Install tubestock in marked zones.','60 hrs','Water-in check after 2 weeks')},
-    {id:'j4',title:'Spray pass – open job',date:addDays(ws,3),start:'08:00',end:'14:00',staff:[],color:COLORS[3],status:'scheduled',published:true,att:[],rec:null,exc:{},brief:DEFAULT_BRIEF}
-   ],
+   jobs:[],
    templates:[],
    lists:[{id:'l1',name:'Field work'},{id:'l2',name:'Admin'}],
-   tasks:[
-    {id:'t1',title:'Confirm vehicle bookings for next week',list:'l2',staff:['s1'],due:today(),important:true,myday:today(),done:false,notes:'',steps:[],repeat:'',created:today()},
-    {id:'t2',title:'Order tubestock',list:'l1',staff:['s2','s3'],due:addDays(today(),3),important:false,myday:'',done:false,notes:'Check species list first.',steps:[{id:'x1',t:'Get final species list',d:true},{id:'x2',t:'Email nursery',d:false}],repeat:'',created:today()},
-    {id:'t3',title:'Upload photos to job folder',list:'l1',staff:['s4'],due:'',important:false,myday:'',done:false,notes:'',steps:[],repeat:'weekly',created:today()}
-   ],
+   tasks:[],
    settings:{briefTpl:DEFAULT_BRIEF}};
 }
 function load(){try{const r=localStorage.getItem(KEY);if(r){const o=JSON.parse(r);if(o&&o.v===1)return o}}catch(e){}return demo()}
@@ -2920,6 +2908,7 @@ async function tsSync(manual){
   if(tsBusy||!odConnected()||!navigator.onLine)return;tsBusy=true;let changed=false,err='';const mine=[];
   try{if(await staffSync())changed=true}catch(e){err=err||String(e.message||e)}
   for(const sc of SYNCS){try{if(await syncColl(sc,mine))changed=true}catch(e){err=err||String(e.message||e)}}
+  if(!err&&!localStorage.getItem('ks_demo_purged')){const nj=S.jobs.length,nt=S.tasks.length;S.jobs=S.jobs.filter(j=>!/^j[1-4]$/.test(j.id));S.tasks=S.tasks.filter(t=>!/^t[123]$/.test(t.id));try{localStorage.setItem('ks_demo_purged','1')}catch(e){}if(S.jobs.length!==nj||S.tasks.length!==nt)changed=true}
   if(changed){save();render()}
   if(mine.length)toast(mine.length===1?'New task for you: '+mine[0]:mine.length+' new tasks for you',false);
   else if(err&&manual)toast('Sync: '+err,true);else if(manual)toast('Everything is up to date');
