@@ -964,18 +964,18 @@ function jcard(o,warn){const j=o.job,loc=briefField(j.brief,'Location'),tl=brief
 /* ----- job sheet ----- */
 function newDraft(date,staffId,tpl){
   if(tpl) return {mode:'new',title:tpl.title,date,start:tpl.start,end:tpl.end,staff:[...tpl.staff],color:tpl.color,brief:tpl.brief,att:tpl.att.map(a=>({...a})),status:'scheduled',published:true,rec:tpl.rec?{...tpl.rec,days:[...(tpl.rec.days||[])],until:''}:null};
-  return {mode:'new',title:'',date,start:'07:00',end:'15:00',staff:staffId?[staffId]:[],color:COLORS[0],brief:S.settings.briefTpl,att:[],status:'scheduled',published:true,rec:null};
+  return {mode:'new',title:'',date,start:'07:00',end:'15:00',staff:staffId?[staffId]:[],color:COLORS[0],brief:S.settings.briefTpl,att:[],status:'scheduled',cid:'',cname:'',published:true,rec:null};
 }
 function draftFrom(master,ds,scope){
   const ex=(master.exc&&master.exc[ds])||{};const src=scope==='one'?{...master,...ex}:master;
-  return {mode:'edit',jobId:master.id,occDate:ds,title:src.title,date:scope==='one'?ds:master.date,start:src.start,end:src.end,staff:[...src.staff],color:master.color,brief:src.brief,att:(master.att||[]).map(a=>({...a})),status:src.status||'scheduled',published:master.published!==false,rec:master.rec?{...master.rec,days:[...(master.rec.days||[])]}:null};
+  return {mode:'edit',jobId:master.id,occDate:ds,title:src.title,date:scope==='one'?ds:master.date,start:src.start,end:src.end,staff:[...src.staff],color:master.color,brief:src.brief,att:(master.att||[]).map(a=>({...a})),status:src.status||'scheduled',cid:src.cid||(src.cname?'__free':''),cname:src.cname||'',published:master.published!==false,rec:master.rec?{...master.rec,days:[...(master.rec.days||[])]}:null};
 }
 function openJob(jobId,ds){const m=S.jobs.find(j=>j.id===jobId);if(!m)return;SH={type:'job',scope:m.rec?'one':'all',d:draftFrom(m,ds,m.rec?'one':'all')};renderJobSheet()}
 function openNewJob(date,staffId,tpl){SH={type:'job',scope:'all',d:newDraft(date,staffId,tpl)};renderJobSheet()}
 function collectJob(){
   if(!SH||SH.type!=='job')return;const d=SH.d,v=id=>{const e=$('#'+id);return e?e.value:undefined};
   const g=(k,id)=>{const x=v(id);if(x!==undefined)d[k]=x};
-  g('title','jf-title');g('date','jf-date');g('start','jf-start');g('end','jf-end');g('brief','jf-brief');g('status','jf-status');
+  g('title','jf-title');g('cid','jf-cid');g('cname','jf-cname');g('date','jf-date');g('start','jf-start');g('end','jf-end');g('brief','jf-brief');g('status','jf-status');
   const p=$('#jf-pub');if(p)d.published=p.checked;
   const f=v('jf-freq');if(f!==undefined){if(!f)d.rec=null;else{d.rec=d.rec||{days:[],until:''};d.rec.freq=f;const u=v('jf-until');if(u!==undefined)d.rec.until=u}}
 }
@@ -988,6 +988,8 @@ function renderJobSheet(){
   <div class="sh-bd">
    ${recur?`<div class="scopebar">${icon('repeat','sm')}Recurring job · editing<div class="seg" style="margin-left:auto"><button class="${scope==='one'?'on':''}" data-act="jscope" data-v="one">This job (${longDate(d.occDate)})</button><button class="${scope==='all'?'on':''}" data-act="jscope" data-v="all">Entire series</button></div></div>`:''}
    <div class="fld"><label for="jf-title">Job title</label><input id="jf-title" value="${esc(d.title)}" placeholder="e.g. Weed control – Sample Reserve"></div>
+   <div class="fld"><label for="jf-cid">Contract / PO</label><select id="jf-cid" data-jcid><option value="">— none selected —</option>${S.contracts.slice().sort((a,b)=>cName(a).localeCompare(cName(b))).map(c=>`<option value="${c.id}" ${d.cid===c.id?'selected':''}>${esc(cName(c))}${c.po?' · '+esc(c.po):' · no PO'}</option>`).join('')}<option value="__free" ${d.cid==='__free'?'selected':''}>No PO — type a job name</option></select>
+     ${d.cid==='__free'?`<input id="jf-cname" value="${esc(d.cname||'')}" placeholder="Job name (used to track hours)" style="margin-top:6px">`:''}</div>
    <div class="grid3"><div class="fld"><label for="jf-date">${recur&&scope==='all'?'Series starts':'Date'}</label><input type="date" id="jf-date" value="${d.date}"></div>
      <div class="fld"><label for="jf-start">Start</label><input type="time" id="jf-start" value="${d.start}"></div><div class="fld"><label for="jf-end">Finish</label><input type="time" id="jf-end" value="${d.end}"></div></div>
    <div class="fld"><span class="lbl">Allocate staff</span><div class="chips">${S.staff.map(s=>`<button type="button" class="chip-sel ${d.staff.includes(s.id)?'on':''}" data-act="jstaff" data-id="${s.id}">${avatar(s.id,'xs')}${esc(s.name)}</button>`).join('')||'<span class="hint">No staff yet — add them from the menu.</span>'}</div>
@@ -1016,7 +1018,7 @@ async function saveJob(){
   if(!d.title.trim()){toast('Give the job a title',true);$('#jf-title')?.focus();return}
   if(!d.date){toast('Choose a date',true);return}
   if(d.rec&&(d.rec.freq==='weekly'||d.rec.freq==='fortnightly')&&!(d.rec.days||[]).length)d.rec.days=[dowIdx(parse(d.date))];
-  const fields={title:d.title.trim(),start:d.start,end:d.end,staff:[...d.staff],brief:d.brief,status:d.status};
+  const fields={title:d.title.trim(),start:d.start,end:d.end,staff:[...d.staff],brief:d.brief,status:d.status,cid:d.cid==='__free'?'':(d.cid||''),cname:d.cid==='__free'?(d.cname||'').trim():''};
   let focusDate=d.date,jobRef=null;
   if(d.mode==='new'){
     const j={id:uid(),date:d.date,color:d.color,published:d.published,att:d.att,rec:d.rec&&d.rec.freq?d.rec:null,exc:{},...fields};S.jobs.push(j);jobRef=j;
@@ -1146,7 +1148,7 @@ function renderTaskSheet(){
 function phCard(ic,title,desc,items,pill='Coming soon'){return `<div class="card ph"><span class="pill gold">${pill}</span><div class="ico">${icon(ic)}</div><h3>${title}</h3><p>${desc}</p><ul>${items.map(i=>`<li>${i}</li>`).join('')}</ul></div>`}
 function vGate(){return `<div class="card" style="max-width:420px;margin:40px auto;padding:26px;text-align:center"><div class="ico" style="margin:0 auto 10px">${icon('shield')}</div><h3 style="margin:0 0 6px">Contracts</h3><p class="hint" style="margin:0 0 14px">Protected to prevent accidental changes. Type <b>Keystone</b> to continue.</p>
   <input id="cgIn" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type here" style="text-align:center;margin-bottom:12px"><button class="btn gold" style="width:100%" data-act="cgate">Open contracts</button><div id="cgMsg" class="hint" style="margin-top:8px;min-height:16px;color:#cd3232"></div></div>`}
-function vContracts(){
+function vContractsOld(){
   const sec=UI.ph.contracts,M=['JUL','AUG','SEP','OCT','NOV','DEC','JAN','FEB','MAR','APR','MAY','JUN'];
   const skelC=`<div class="skel-wrap"><table class="skel"><thead><tr><th style="text-align:left">Site</th><th></th>${M.map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody>${['Quoted','Spent','Invoice','Available hrs'].map((r,i)=>`<tr><td>${i===0?'Site name · PO · $':''}</td><td>${r}</td>${M.map(()=>'<td><span class="bar"></span></td>').join('')}</tr>`).join('')}</tbody></table></div>`;
   const skelW=`<div class="skel-wrap"><table class="skel"><thead><tr><th style="text-align:left">Site</th><th>Total budget</th><th>Due</th><th>Spent</th><th>Remaining</th><th>Notes</th></tr></thead><tbody>${[0,1,2,3].map(()=>`<tr><td><span class="bar" style="width:60%"></span></td>${'<td><span class="bar"></span></td>'.repeat(5)}</tr>`).join('')}</tbody></table></div>`;
@@ -1177,7 +1179,7 @@ function menuSheet(){
 }
 function staffSheet(){
   sheet(`<div class="sh-hd"><h2>Staff &amp; roles</h2><button class="icon-btn" style="background:var(--cream);color:var(--ink);border-color:var(--border)" data-act="close">${icon('x')}</button></div><div class="sh-bd">
-   ${S.staff.map(s=>`<div class="staff-row">${avatar(s.id,'lg')}<input value="${esc(s.name)}" data-live-staff="name" data-id="${s.id}" placeholder="Name"><input class="role" value="${esc(s.role||'')}" data-live-staff="role" data-id="${s.id}" placeholder="Role"><button class="btn sm danger" data-act="staffdel" data-id="${s.id}" aria-label="Remove">${icon('trash','sm')}</button></div>`).join('')}
+   ${S.staff.map(s=>`<div class="staff-row">${avatar(s.id,'lg')}<input value="${esc(s.name)}" data-live-staff="name" data-id="${s.id}" placeholder="Name"><input class="role" value="${esc(s.role||'')}" data-live-staff="role" data-id="${s.id}" placeholder="Role"><label class="cas"><input type="checkbox" data-cas="${s.id}" ${isCasual(s)?'checked':''}>Casual</label><button class="btn sm danger" data-act="staffdel" data-id="${s.id}" aria-label="Remove">${icon('trash','sm')}</button></div>`).join('')}
    <button class="btn" data-act="staffadd">${icon('plus','sm')}Add staff member</button></div><div class="sh-ft"><span class="sp-grow"></span><button class="btn gold" data-act="menu">Done</button></div>`);
 }
 function briefTplSheet(){
@@ -1358,7 +1360,7 @@ function missingFields(r){
 
 /* ---------- create ---------- */
 function newReport(tid,occ){
-  const t=TPL(tid),r={id:uid(),type:tid,created:Date.now(),updated:Date.now(),status:'draft',d:{},m:{},n:{},coverId:null};
+  const t=TPL(tid),r={id:uid(),type:tid,by:meName(),created:Date.now(),updated:Date.now(),status:'draft',d:{},m:{},n:{},coverId:null};
   flat(t).forEach(it=>{
     if(!IDX[tid][it.k].rep&&(it.t==='datetime'||it.t==='date'||it.role==='when'))r.d[it.k]=it.t==='date'?fmt(new Date()):nowLocal();
     if(it.def)r.d[it.k]=it.def;
@@ -1537,7 +1539,7 @@ document.addEventListener('click',async e=>{
    case 'sigclr':{delete c.d[k];touch(r);renderForm()}break;
    case 'shuffle':r.coverId=null;touch(r);toast('A new random cover will be chosen on export');break;
    case 'reopen':r.status='draft';touch(r);renderForm();break;
-   case 'del':{const ch=await askChoice('Delete report','This permanently deletes the report and its photos from this device.',[{v:'del',t:'Delete',cls:'danger'}]);if(ch==='del'){const all=[];(function w(o){if(o&&typeof o==='object'){if(Array.isArray(o.m?.__x))return;Object.values(o.m||{}).flat().forEach(x=>x&&x.id&&all.push(x.id))}})(r);Object.values(r.d).forEach(x=>Array.isArray(x)&&x.forEach(row=>row&&row.m&&Object.values(row.m).flat().forEach(y=>all.push(y.id))));Object.values(r.m).flat().forEach(x=>all.push(x.id));all.forEach(fileDel);S.reports=S.reports.filter(x=>x.id!==r.id);save();RF.id=null;renderForm();render()}}break;
+   case 'del':{if(!canDelReport(r)){toast('Only '+(r.by||'Michael Sommer')+(r.by&&!/sommer/i.test(r.by)?' or Michael Sommer':'')+' can delete this report',true);break}const ch=await askChoice('Delete report','This permanently deletes the report and its photos from this device.',[{v:'del',t:'Delete',cls:'danger'}]);if(ch==='del'){const all=[];(function w(o){if(o&&typeof o==='object'){if(Array.isArray(o.m?.__x))return;Object.values(o.m||{}).flat().forEach(x=>x&&x.id&&all.push(x.id))}})(r);Object.values(r.d).forEach(x=>Array.isArray(x)&&x.forEach(row=>row&&row.m&&Object.values(row.m).flat().forEach(y=>all.push(y.id))));Object.values(r.m).flat().forEach(x=>all.push(x.id));all.forEach(fileDel);S.reports=S.reports.filter(x=>x.id!==r.id);save();RF.id=null;renderForm();render()}}break;
    case 'complete':{
      const miss=missingFields(r);
      if(miss.length){RF.showMiss=true;renderForm();const first=$('.rf.miss');first&&first.scrollIntoView({block:'center',behavior:'smooth'});toast(`${miss.length} required item${miss.length>1?'s':''} still to complete`,true);break}
@@ -2397,55 +2399,332 @@ async function complianceDownload(k){
 document.addEventListener('click',e=>{const t=e.target.closest('[data-cm]');if(t&&t.dataset.cm==='dl'&&!t.disabled)complianceDownload(t.dataset.k)});
 document.addEventListener('change',e=>{if(e.target.matches('[data-cm-sel]')){UI.cm=e.target.value;render()}});
 
+const canDelReport=r=>/sommer/i.test(meName())||(!!r.by&&r.by===meName());
+
 /* =====================================================================
-   Shared To Do list via OneDrive (one small JSON file per task).
-   Phones signed in to the same Microsoft account share the list.
-   Staff are matched by NAME, so each phone's own staff ids don't matter.
-   Deleting a task writes a "deleted" marker file; nothing is ever deleted from OneDrive.
+   Contracts: contract master + daily hours + monthly workflow + FTE stats
+   + invoice to-dos for Michael Sommer. Financial year is Jul–Jun.
    ===================================================================== */
-const TS_DIR='sync/tasks';
-const tsMeta=()=>lsj('ks_ts_meta',{h:{},seen:{}});
-const tsSkip=id=>/^t[123]$/.test(id);
+(function(){const st=document.createElement('style');st.textContent=`
+.kp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px;margin:0 0 12px}
+.kp{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.kp b{display:block;font-size:20px;line-height:1.25}.kp span{font-size:11.5px;color:var(--muted)}.kp.gold{border-color:var(--gold)}
+.cn-row{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.cn-row .t{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:700}
+.cn-row .s{font-size:12.5px;color:var(--muted);margin-top:3px}
+.chip-s{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:#ececec;color:#555;white-space:nowrap}
+.chip-s.ok{background:#dff1e0;color:#1d6b26}.chip-s.go{background:#fbf0cc;color:#7a5d00}.chip-s.pia{background:#e4ebf7;color:#2c4d82}
+.mgw{overflow-x:auto;border:1px solid var(--border);border-radius:10px;margin:8px 0}
+.mg{border-collapse:collapse;font-size:12.5px;min-width:100%}.mg th,.mg td{padding:5px 7px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+.mg th:first-child,.mg td:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
+.mg input{width:60px;padding:3px 5px;text-align:right}
+.inv-g{color:#1f8a2e;font-weight:700}.inv-k{color:var(--ink);font-weight:600}
+.dy-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:8px}
+.dy-row .n{flex:1;min-width:0;font-weight:700}.dy-row .n small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.dy-row input{width:76px;text-align:right}
+.staff-row .cas{font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap}
+.staff-row{grid-template-columns:auto 1fr 1fr auto auto}
+@media(max-width:700px){.staff-row .cas{grid-column:2/3}}
+`;document.head.appendChild(st)})();
+
+const VIC_OFF=[['2026-09-25','Friday before AFL Grand Final'],['2026-11-03','Melbourne Cup Day'],['2026-12-25','Christmas Day'],['2026-12-28','Boxing Day (additional holiday)'],['2027-01-01',"New Year's Day"],['2027-01-26','Australia Day'],['2027-03-08','Labour Day'],['2027-03-26','Good Friday'],['2027-03-29','Easter Monday'],['2027-06-14',"King's Birthday"]];
+S.contracts=S.contracts||[];S.hlog=S.hlog||[];S.other=S.other||[];S.cfg=S.cfg||[];
+const cfg=()=>{if(!S.cfg.length)S.cfg.push({id:'cfg',fy:2026,daysOff:VIC_OFF.map(([d,n])=>({d,n}))});return S.cfg[0]};
+const MN=['Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun'];
+const FYM=()=>{const y=+cfg().fy||2026,a=[];for(let i=0;i<12;i++){const m=(i+6)%12+1;a.push((i<6?y:y+1)+'-'+String(m).padStart(2,'0'))}return a};
+const curMonth=()=>today().slice(0,7);
+const yesterday=()=>addDays(today(),-1);
+const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/[$,\s]/g,''));return isFinite(n)?n:0};
+const r2=n=>Math.round(n*100)/100;
+const money=n=>'$'+(n<0?'-':'')+Math.abs(n).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+const hr=n=>String(r2(n));
+const norm=s=>String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+const canEdit=()=>/sommer|mccormack/i.test(meName());
+const isAdmin=()=>/sommer/i.test(meName());
+const isCasual=s=>s.casual===true||(s.casual===undefined&&/hutcheson/i.test(s.name));
+const addMonth=(mk,n)=>{const [y,m]=mk.split('-').map(Number),d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
+UI.con=UI.con||{tab:'workflow',month:curMonth(),date:yesterday(),extra:[],q:''};
+
+/* ---------- lookup ---------- */
+const contractById=id=>S.contracts.find(c=>c.id===id);
+function findContract(name){const n=norm(name);if(!n)return null;
+  return S.contracts.find(c=>norm(c.po)===n)||S.contracts.find(c=>norm(c.name)===n)||S.contracts.find(c=>(c.aliases||[]).some(a=>norm(a)===n))||null}
+function resolveJob(job){
+  if(job.cid){const c=contractById(job.cid);if(c)return c}
+  if(job.cname)return findContract(job.cname);
+  const t=norm(job.title);if(!t)return null;
+  const exact=findContract(job.title);if(exact)return exact;
+  let best=null,bl=0;for(const c of S.contracts)for(const nm of [c.name,...(c.aliases||[])]){const n=norm(nm);if(n.length>bl&&(t===n||t.startsWith(n+' ')||t.endsWith(' '+n)||t.includes(' '+n+' '))){best=c;bl=n.length}}
+  return best}
+function ensureContract(name){let c=findContract(name);if(!c){c={id:uid(),po:'',name:String(name).trim(),client:'',aliases:[],rate:0,gst:false,pia:false,value:0,q:Array(12).fill(0),sp:Array(12).fill(0),narr:'',notes:'',auto:true};S.contracts.push(c);save()}return c}
+
+/* ---------- hours (stored per contract per month, days inside) ---------- */
+const hmId=(cid,mk)=>'hm_'+cid+'_'+mk;
+const hmRec=(cid,mk)=>S.hlog.find(x=>x.id===hmId(cid,mk));
+const hoursOn=(cid,date)=>{const r=hmRec(cid,date.slice(0,7));return r&&r.days?num(r.days[date]):0};
+function hoursIn(c,mk){const i=FYM().indexOf(mk);let t=i>=0?num((c.sp||[])[i]):0;const r=hmRec(c.id,mk);if(r&&r.days)for(const v of Object.values(r.days))t+=num(v);return r2(t)}
+function setHours(cid,date,v){
+  const mk=date.slice(0,7),n=r2(num(v));let r=hmRec(cid,mk);
+  if(!r){if(!n)return;r={id:hmId(cid,mk),cid,month:mk,days:{}};S.hlog.push(r)}
+  r.days=r.days||{};if(n)r.days[date]=n;else delete r.days[date];r.by=meName();
+  save();const c=contractById(cid);if(c)syncInvoice(c,mk)}
+const otherIn=(cid,mk)=>{const e=S.other.find(x=>x.id==='o_'+cid+'_'+mk);return e?num(e.amt):0};
+function setOther(cid,mk,amt){const id='o_'+cid+'_'+mk;let e=S.other.find(x=>x.id===id);const n=r2(num(amt));
+  if(!e){if(!n)return;e={id,cid,month:mk,amt:n};S.other.push(e)}else e.amt=n;save();const c=contractById(cid);if(c)syncInvoice(c,mk)}
+function budgetFor(c,mk){const f=FYM(),i=f.indexOf(mk);if(i<0)return 0;let q=0,s=0;for(let k=0;k<=i;k++)q+=num((c.q||[])[k]);for(let k=0;k<i;k++)s+=hoursIn(c,f[k]);return Math.max(0,r2(q-s))}
+function availAfter(c,i){const f=FYM();let a=0;for(let k=0;k<=i;k++)a+=num((c.q||[])[k])-hoursIn(c,f[k]);return r2(a)}
+
+/* ---------- invoices → to-do for Michael Sommer ---------- */
+const gstF=c=>c.gst?1.1:1;
+const invTotals=(c,mk)=>{const h=hoursIn(c,mk),o=otherIn(c.id,mk);return {h,o,amt:r2((h*num(c.rate)+o)*gstF(c))}};
+const invKey=(c,mk)=>c.id+'|'+mk;
+const histOf=(c,mk)=>{const i=FYM().indexOf(mk);return i>=0?num((c.sp||[])[i]):0};
+function doneOf(k,base){let h=num(base),o=0;for(const t of S.tasks)if(t.inv&&t.inv.k===k&&t.done){h=Math.max(h,num(t.inv.h));o=Math.max(o,num(t.inv.o))}return {h,o}}
+function invState(c,mk){
+  if(c.pia)return {st:'pia',amt:0};const t=invTotals(c,mk);if(t.h+t.o<=0)return {st:'none',amt:0};
+  const d=doneOf(invKey(c,mk),histOf(c,mk));return {st:(d.h>=t.h-1e-9&&d.o>=t.o-1e-9)?'done':'todo',amt:t.amt}}
+function syncInvoice(c,mk){
+  if(c.pia||!(num(c.rate)>0))return;const k=invKey(c,mk),t=invTotals(c,mk),d=doneOf(k,histOf(c,mk)),open=S.tasks.find(x=>x.inv&&x.inv.k===k&&!x.done);
+  const uh=r2(t.h-d.h),uo=r2(t.o-d.o);
+  if(uh<=1e-9&&uo<=1e-9){if(open){S.tasks=S.tasks.filter(x=>x!==open);save()}return}
+  const amt=r2((uh*num(c.rate)+uo)*gstF(c));
+  const title=`Invoice ${c.name}${c.po?' ('+c.po+')':''} – ${mLabel(mk)} – ${money(amt)}${c.gst?' inc GST':''}`;
+  const notes=[c.narr||'',`Hours: ${hr(uh)} × ${money(num(c.rate))}/hr = ${money(uh*num(c.rate))}`,uo?`Other (materials/hire etc.): ${money(uo)}`:'',c.gst?`GST 10% included. Total ${money(amt)}`:`No GST. Total ${money(amt)}`].filter(Boolean).join('\n');
+  if(open){open.title=title;open.notes=notes;open.inv={k,h:t.h,o:t.o}}
+  else{const mike=S.staff.find(s=>/michael sommer/i.test(s.name))||S.staff.find(s=>/sommer/i.test(s.name));
+    S.tasks.unshift({id:uid(),title,list:listIdByName('Invoices'),staff:[mike?mike.id:staffIdByName('Michael Sommer')],due:today(),important:false,myday:'',done:false,notes,steps:[],repeat:'',created:today(),inv:{k,h:t.h,o:t.o}})}
+  save()}
+
+/* ---------- working days / stats ---------- */
+function workDays(mk,through){
+  const [y,m]=mk.split('-').map(Number),last=new Date(y,m,0).getDate(),off=new Set((cfg().daysOff||[]).map(x=>x.d));let n=0;
+  for(let d=1;d<=last;d++){const ds=mk+'-'+String(d).padStart(2,'0');if(through&&ds>through)break;const w=new Date(y,m-1,d).getDay();if(w>0&&w<6&&!off.has(ds))n++}return n}
+function monthDays(mk){const [y,m]=mk.split('-').map(Number),last=new Date(y,m,0).getDate(),a=[];for(let d=1;d<=last;d++)a.push(mk+'-'+String(d).padStart(2,'0'));return a}
+function monthStats(mk){
+  const sched={},days=monthDays(mk),yd=yesterday(),cas=S.staff.filter(isCasual),casDays=new Set();let unlinked=0;
+  for(const ds of days){for(const o of occurrencesOn(ds)){const c=resolveJob(o.job);if(c){if(!sched[c.id]||ds<sched[c.id])sched[c.id]=ds}else unlinked++;
+    if(ds<=yd)for(const s of cas)if(o.job.staff.includes(s.id))casDays.add(s.id+'|'+ds)}}
+  const rows=[];
+  for(const c of S.contracts){const b=budgetFor(c,mk),s=hoursIn(c,mk);if(b>0||s>0||sched[c.id])rows.push({c,budget:b,spent:s,remain:r2(b-s),due:sched[c.id]||'',status:s>0&&b>0&&s>=b?'Complete':s>0?'In progress':'Not started'})}
+  rows.sort((a,b)=>(a.due||'9').localeCompare(b.due||'9')||cName(a.c).localeCompare(cName(b.c)));
+  const total=r2(rows.reduce((a,r)=>a+r.budget,0)),done=r2(rows.reduce((a,r)=>a+r.spent,0)),wd=workDays(mk),el=workDays(mk,yd),casual=casDays.size*8;
+  const ft=done-casual;
+  return {rows,total,done,wd,el,casual,ft,unlinked,
+    fte:wd?total/8/wd:null,fteC:el?done/8/el:null,ftFte:el?ft/8/el:null,avgRem:(wd-el)>0?(total-done)/8/(wd-el):null}}
+const cName=c=>c.name||c.po||'(unnamed)';
+const fx=v=>v==null?'—':(Math.round(v*100)/100).toFixed(2);
+
+/* ---------- views ---------- */
+function vContracts(){
+  const C=UI.con,edit=canEdit(),fy=+cfg().fy||2026;
+  const tabs=[['workflow','Workflow'],['daily','Daily hours'],['master','Contract master']];
+  return `<div class="page-head"><div><h1>Contracts</h1><div class="sub">FY ${fy}–${String(fy+1).slice(2)} · ${S.contracts.length} contracts${edit?'':' · view only'}</div></div></div>
+   <div class="toolbar"><div class="seg">${tabs.map(([k,l])=>`<button class="${C.tab===k?'on':''}" data-cn="tab" data-v="${k}">${l}</button>`).join('')}</div></div>
+   ${edit?'':`<div class="rinfo" style="margin-bottom:10px">View only. Hours are entered by Michael Sommer or Liam McCormack (switch person from the menu).</div>`}
+   ${C.tab==='daily'?vDaily():C.tab==='master'?vMaster():vWorkflow()}`}
+function vWorkflow(){
+  const C=UI.con,mk=C.month,st=monthStats(mk),kp=(v,l,g)=>`<div class="kp ${g?'gold':''}"><b>${v}</b><span>${l}</span></div>`;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><button class="btn sm" data-cn="mnav" data-v="-1">‹</button><b>${esc(mLabel(mk))}</b><button class="btn sm" data-cn="mnav" data-v="1">›</button></div>
+  <div class="kp-grid">${kp(hr(st.total),'Total budget hrs')}${kp(fx(st.fte),'Monthly FTE',1)}${kp(hr(st.done),'Hrs completed')}${kp(fx(st.fteC),'FTE completed',1)}${kp(hr(st.casual),'Casual hrs')}${kp(hr(st.ft),'FT crew hrs')}${kp(fx(st.ftFte),'FT crew FTE',1)}${kp(fx(st.avgRem),'Av. FTE remaining')}</div>
+  <div class="hint" style="margin:-4px 0 10px">${st.wd} working days · ${st.el} through yesterday · ${st.wd-st.el} to go. Budget = hours still available on each contract (quoted to date less spent to date).${st.unlinked?` ${st.unlinked} scheduled job${st.unlinked>1?'s':''} not linked to a contract.`:''}</div>
+  ${st.rows.map(r=>`<div class="cn-row" data-cn="hsheet" data-c="${r.c.id}"><div class="t"><span>${esc(cName(r.c))}${r.c.po?` <small style="font-weight:400;color:var(--muted)">${esc(r.c.po)}</small>`:''}</span><span class="chip-s ${r.status==='Complete'?'ok':r.status==='In progress'?'go':''}">${r.status}</span></div>
+   <div class="s">Budget ${hr(r.budget)} · Spent ${hr(r.spent)} · Remaining ${hr(r.remain)}${r.due?' · Due '+esc(shortD(r.due)):''}${r.c.pia?' · <b>Paid in advance</b>':''}</div></div>`).join('')||`<div class="hint">No contracts for this month yet. Import your contract spreadsheet from Contract master.</div>`}`}
+const shortD=ds=>{const d=parse(ds);return d.getDate()+' '+MN[(d.getMonth()+6)%12]};
+function vDaily(){
+  const C=UI.con,d=C.date,rows=new Map();
+  for(const o of occurrencesOn(d)){const c=resolveJob(o.job);const k=c?c.id:'n:'+norm(o.job.cname||o.job.title);const r=rows.get(k)||{c,name:c?'':(o.job.cname||o.job.title),jobs:[]};r.jobs.push(o.job.title);rows.set(k,r)}
+  for(const cid of C.extra)if(!rows.has(cid)){const c=contractById(cid);if(c)rows.set(cid,{c,jobs:[]})}
+  for(const r of S.hlog)if(r.days&&r.days[d]&&!rows.has(r.cid)){const c=contractById(r.cid);if(c)rows.set(c.id,{c,jobs:[]})}
+  const edit=canEdit();let tot=0;
+  const html=[...rows.entries()].map(([k,r])=>{const v=r.c?hoursOn(r.c.id,d):0;tot+=v;
+    return `<div class="dy-row"><div class="n">${esc(r.c?cName(r.c):r.name)}${r.c&&r.c.po?` <small>${esc(r.c.po)}</small>`:r.c?'':'<small>No PO — will be created by name</small>'}${r.jobs.length?`<small>${esc(r.jobs.join(', '))}</small>`:''}</div>
+     <input type="number" inputmode="decimal" step="0.5" min="0" value="${v||''}" placeholder="hrs" ${edit?'':'disabled'} data-cn-in="d" ${r.c?`data-c="${r.c.id}"`:`data-n="${esc(r.name)}"`}></div>`}).join('');
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><button class="btn sm" data-cn="dnav" data-v="-1">‹</button><input type="date" value="${d}" data-cn-date style="width:auto"><button class="btn sm" data-cn="dnav" data-v="1">›</button></div>
+   <div class="hint" style="margin-bottom:8px">Jobs scheduled on this day are listed. Type the hours completed on each. Total for the day: <b>${hr(tot)}</b> hrs.</div>
+   ${html||'<div class="hint">Nothing scheduled on this day.</div>'}
+   ${edit?`<div class="fld" style="margin-top:10px"><label>Add another job</label><div style="display:flex;gap:6px;flex-wrap:wrap"><select id="dyAdd" style="flex:1;min-width:150px"><option value="">Choose a contract…</option>${S.contracts.slice().sort((a,b)=>cName(a).localeCompare(cName(b))).map(c=>`<option value="${c.id}">${esc(cName(c))}${c.po?' · '+esc(c.po):''}</option>`).join('')}</select><input id="dyNew" placeholder="…or job name (no PO)" style="flex:1;min-width:140px"><button class="btn" data-cn="dadd">Add</button></div></div>`:''}`}
+function vMaster(){
+  const edit=canEdit(),q=norm(UI.con.q),f=FYM();
+  const list=S.contracts.slice().sort((a,b)=>(a.client||'').localeCompare(b.client||'')||cName(a).localeCompare(cName(b))).filter(c=>!q||norm([c.name,c.po,c.client,...(c.aliases||[])].join(' ')).includes(q));
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input data-cn-q placeholder="Search name, PO or client" value="${esc(UI.con.q)}" style="flex:1;min-width:160px">
+   ${edit?`<button class="btn gold" data-cn="cnew">+ Contract</button><label class="btn" style="cursor:pointer">Import spreadsheet<input type="file" accept=".xlsx" hidden data-cn-file></label><button class="btn" data-cn="days">Non-working days</button>`:''}</div>
+  ${list.map(c=>{const q=(c.q||[]).reduce((a,b)=>a+num(b),0),sp=f.reduce((a,m)=>a+hoursIn(c,m),0);let inv=0,pend=0;f.forEach(m=>{const s=invState(c,m);if(s.st==='done')inv+=invTotals(c,m).amt;else if(s.st==='todo')pend+=s.amt});
+    return `<div class="cn-row" data-cn="csheet" data-c="${c.id}"><div class="t"><span>${esc(cName(c))}${c.po?` <small style="font-weight:400;color:var(--muted)">${esc(c.po)}</small>`:''}</span>${c.pia?'<span class="chip-s pia">Paid in advance</span>':c.client?`<span class="chip-s">${esc(c.client)}</span>`:''}</div>
+    <div class="s">Quoted ${hr(q)} h · Spent ${hr(sp)} h · Remaining ${hr(q-sp)} h${c.pia?'':` · Invoiced <span class="inv-g">${money(inv)}</span>${pend?` · To invoice <span class="inv-k">${money(pend)}</span>`:''}`}</div></div>`}).join('')||'<div class="hint">No contracts yet. Tap Import spreadsheet.</div>'}`}
+
+/* ---------- sheets ---------- */
+function contractSheet(cid){
+  const c=contractById(cid);if(!c)return;UI.cs=cid;const f=FYM(),edit=canEdit();
+  const rowH=f.map((m,i)=>`<td>${hr(num((c.q||[])[i]))||0}</td>`);
+  const q=(c.q||[]).reduce((a,b)=>a+num(b),0),sp=f.reduce((a,m)=>a+hoursIn(c,m),0);let invT=0,exT=0,othT=0;
+  const cells=f.map(m=>{const s=invState(c,m),t=invTotals(c,m);if(!c.pia){invT+=s.st==='done'?t.amt:0;exT+=t.h*num(c.rate)+t.o}othT+=otherIn(c.id,m);
+    return `<td class="${s.st==='done'?'inv-g':'inv-k'}">${s.st==='none'||s.st==='pia'?'–':money(t.amt)}</td>`});
+  sheet(`<div class="sh-hd"><h2 style="font-size:16px">${esc(cName(c))}</h2><button class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div><div class="sh-bd">
+   <div class="hint" style="margin-top:0">${c.po?'PO '+esc(c.po)+' · ':''}${esc(c.client||'')}${c.client?' · ':''}${c.pia?'Paid in advance (hours tracked, not invoiced)':`$${num(c.rate).toFixed(2)}/hr ${c.gst?'+ GST':'(no GST)'}`}${(c.aliases||[]).length?'<br>Also known as: '+esc(c.aliases.join(', ')):''}</div>
+   <div class="mgw"><table class="mg"><thead><tr><th></th>${f.map((m,i)=>`<th>${MN[i]}</th>`).join('')}<th>Total</th></tr></thead><tbody>
+    <tr><td>Quoted hrs</td>${rowH.join('')}<td><b>${hr(q)}</b></td></tr>
+    <tr><td>Spent hrs</td>${f.map(m=>`<td>${hr(hoursIn(c,m))}</td>`).join('')}<td><b>${hr(sp)}</b></td></tr>
+    <tr><td>Invoice ${c.gst?'inc GST':''}</td>${cells.join('')}<td><b>${c.pia?'–':money(invT)}</b></td></tr>
+    <tr><td>Other $ (ex GST)</td>${f.map(m=>`<td>${edit&&!c.pia?`<input type="number" step="0.01" value="${otherIn(c.id,m)||''}" data-cn-in="o" data-c="${c.id}" data-m="${m}">`:(otherIn(c.id,m)||'–')}</td>`).join('')}<td><b>${money(othT)}</b></td></tr>
+    <tr><td>Available hrs</td>${f.map((m,i)=>`<td>${hr(availAfter(c,i))}</td>`).join('')}<td></td></tr></tbody></table></div>
+   <div class="hint">Remaining hours: <b>${hr(q-sp)}</b>${num(c.value)?` · Contract value ${money(num(c.value))} · Remaining ${money(num(c.value)-exT)} (ex GST)`:''}. Green = invoice ticked off in To Do; black = still to invoice.</div>
+   ${c.narr?`<div class="hint" style="margin-top:6px">Invoice narration: ${esc(c.narr)}</div>`:''}${c.notes?`<div class="hint">Notes: ${esc(c.notes)}</div>`:''}
+   ${edit?`<div style="margin-top:10px"><button class="btn" data-cn="cedit" data-c="${c.id}">Edit contract</button></div>`:''}</div>`)}
+function hoursSheet(cid,mk){
+  const c=contractById(cid);if(!c)return;UI.hs={cid,mk};const r=hmRec(cid,mk),edit=canEdit(),b=budgetFor(c,mk),s=hoursIn(c,mk),i=FYM().indexOf(mk),hist=i>=0?num((c.sp||[])[i]):0;
+  const days=r&&r.days?Object.keys(r.days).sort():[];const defD=(yesterday().startsWith(mk)?yesterday():mk+'-01');
+  sheet(`<div class="sh-hd"><h2 style="font-size:16px">${esc(cName(c))} · ${esc(mLabel(mk))}</h2><button class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div><div class="sh-bd">
+   <div class="kp-grid"><div class="kp"><b>${hr(b)}</b><span>Budget</span></div><div class="kp"><b>${hr(s)}</b><span>Spent</span></div><div class="kp"><b>${hr(b-s)}</b><span>Remaining</span></div></div>
+   ${hist?`<div class="hint">Includes ${hr(hist)} hrs recorded before the app was used.</div>`:''}
+   ${days.map(d=>`<div class="dy-row"><div class="n">${esc(longDate(d))}</div><input type="number" step="0.5" min="0" value="${r.days[d]}" ${edit?'':'disabled'} data-cn-in="hs" data-c="${cid}" data-d="${d}"></div>`).join('')||'<div class="hint">No daily hours entered yet.</div>'}
+   ${edit?`<div class="fld" style="margin-top:10px"><label>Add hours</label><div style="display:flex;gap:6px"><input type="date" id="hsd" value="${defD}" style="flex:1"><input type="number" step="0.5" min="0" id="hsh" placeholder="hrs" style="width:90px"><button class="btn gold" data-cn="hadd">Add</button></div></div>`:''}
+   ${c.pia?'<div class="hint">Paid in advance: hours are tracked but no invoice is raised.</div>':!(num(c.rate)>0)?'<div class="hint" style="color:#b5683a">No rate set for this job, so no invoice to-do is created. Edit the contract to add one.</div>':'<div class="hint">An “Invoice…” to-do for Michael Sommer is created or updated as hours are added.</div>'}</div>`)}
+function contractEditSheet(cid){
+  const c=cid?contractById(cid):{id:'',po:'',name:'',client:'',aliases:[],rate:0,gst:true,pia:false,value:0,q:[],sp:[],narr:'',notes:''};UI.ce=cid||'';
+  const grid=(pre,arr)=>`<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">${MN.map((m,i)=>`<div><small style="color:var(--muted)">${m}</small><input type="number" step="0.5" id="${pre}${i}" value="${num((arr||[])[i])||''}" style="width:100%;padding:6px 4px"></div>`).join('')}</div>`;
+  sheet(`<div class="sh-hd"><h2>${cid?'Edit contract':'New contract'}</h2><button class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div><div class="sh-bd">
+   <div class="fld"><label>Contract / job name</label><input id="ce-name" value="${esc(c.name)}"></div>
+   <div class="grid3"><div class="fld"><label>PO (blank if none)</label><input id="ce-po" value="${esc(c.po)}"></div><div class="fld"><label>Client</label><input id="ce-client" value="${esc(c.client||'')}"></div><div class="fld"><label>Rate $/hr (ex GST)</label><input id="ce-rate" type="number" step="0.01" value="${num(c.rate)||''}"></div></div>
+   <div class="fld"><label>Other names (workflow / schedule shorthand), separated by ;</label><input id="ce-alias" value="${esc((c.aliases||[]).join('; '))}"></div>
+   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><label><input type="checkbox" id="ce-gst" ${c.gst?'checked':''}> GST applies</label><label><input type="checkbox" id="ce-pia" ${c.pia?'checked':''}> Paid in advance (no invoice)</label></div>
+   <div class="fld"><label>Contract value $ (ex GST)</label><input id="ce-val" type="number" step="0.01" value="${num(c.value)||''}"></div>
+   <div class="fld"><span class="lbl">Quoted hours by month (Jul–Jun)</span>${grid('ce-q',c.q)}</div>
+   <div class="fld"><span class="lbl">Hours spent before the app was used (Jul–Jun)</span>${grid('ce-s',c.sp)}</div>
+   <div class="fld"><label>Invoice narration</label><textarea id="ce-narr" rows="3">${esc(c.narr||'')}</textarea></div>
+   <div class="fld"><label>Notes</label><textarea id="ce-notes" rows="2">${esc(c.notes||'')}</textarea></div></div>
+   <div class="sh-ft"><button class="btn gold sp-grow" data-cn="csave">Save</button></div>`)}
+function daysSheet(){
+  sheet(`<div class="sh-hd"><h2>Non-working days</h2><button class="icon-btn" data-act="close" aria-label="Close">${icon('x')}</button></div><div class="sh-bd">
+   <div class="hint" style="margin-top:0">Working days = weekdays minus these dates (Victorian public holidays are pre-filled). One per line: <b>YYYY-MM-DD, name</b>. Add shutdown days or leave days here too.</div>
+   <textarea id="dayList" rows="14" style="font-family:monospace">${esc((cfg().daysOff||[]).map(x=>x.d+', '+(x.n||'')).join('\n'))}</textarea></div>
+   <div class="sh-ft"><button class="btn gold sp-grow" data-cn="dsave">Save</button></div>`,{narrow:true})}
+
+/* ---------- events ---------- */
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-cn]');if(!t)return;const a=t.dataset.cn,C=UI.con,c=t.dataset.c;
+  if(a==='tab'){C.tab=t.dataset.v;render()}
+  if(a==='mnav'){C.month=addMonth(C.month,+t.dataset.v);render()}
+  if(a==='dnav'){C.date=addDays(C.date,+t.dataset.v);C.extra=[];render()}
+  if(a==='hsheet')hoursSheet(c,C.month);
+  if(a==='csheet')contractSheet(c);
+  if(a==='cedit')contractEditSheet(c);
+  if(a==='cnew')contractEditSheet('');
+  if(a==='days')daysSheet();
+  if(a==='hadd'){const d=$('#hsd').value,h=$('#hsh').value;if(!d||!num(h)){toast('Choose a date and enter hours',true);return}setHours(UI.hs.cid,d,h);const mk=d.slice(0,7);hoursSheet(UI.hs.cid,mk);render()}
+  if(a==='dadd'){let id=$('#dyAdd').value;const nm=($('#dyNew').value||'').trim();if(nm)id=ensureContract(nm).id;if(!id){toast('Pick a contract or type a name',true);return}if(!C.extra.includes(id))C.extra.push(id);render()}
+  if(a==='csave'){
+    const g=id=>$('#'+id).value,name=g('ce-name').trim();if(!name){toast('Give the contract a name',true);return}
+    let k=contractById(UI.ce);if(!k){k={id:uid(),aliases:[]};S.contracts.push(k)}
+    Object.assign(k,{name,po:g('ce-po').trim(),client:g('ce-client').trim(),rate:num(g('ce-rate')),gst:$('#ce-gst').checked,pia:$('#ce-pia').checked,value:num(g('ce-val')),narr:g('ce-narr'),notes:g('ce-notes'),
+      aliases:g('ce-alias').split(';').map(x=>x.trim()).filter(Boolean),q:MN.map((m,i)=>num(g('ce-q'+i))),sp:MN.map((m,i)=>num(g('ce-s'+i)))});
+    delete k.auto;save();closeSheet();render();toast('Saved');FYM().forEach(m=>{if(hoursIn(k,m))syncInvoice(k,m)})}
+  if(a==='dsave'){const out=[];for(const ln of $('#dayList').value.split('\n')){const m=ln.trim().match(/^(\d{4}-\d{2}-\d{2})\s*[,;]?\s*(.*)$/);if(m)out.push({d:m[1],n:m[2]})}cfg().daysOff=out;save();closeSheet();render();toast('Saved')}
+});
+document.addEventListener('change',async e=>{
+  const t=e.target;
+  if(t.matches('[data-cn-date]')){UI.con.date=t.value||yesterday();UI.con.extra=[];render()}
+  if(t.matches('[data-cn-in]')){
+    const k=t.dataset.cnIn;
+    if(k==='d'){const cid=t.dataset.c||ensureContract(t.dataset.n).id;setHours(cid,UI.con.date,t.value);render()}
+    if(k==='hs'){setHours(t.dataset.c,t.dataset.d,t.value);hoursSheet(UI.hs.cid,UI.hs.mk);render()}
+    if(k==='o'){setOther(t.dataset.c,t.dataset.m,t.value);contractSheet(t.dataset.c);render()}}
+  if(t.matches('[data-cn-q]')){UI.con.q=t.value;render()}
+  if(t.matches('[data-cn-file]')&&t.files[0]){try{await importWorkbook(t.files[0])}catch(err){console.error(err);toast('Import failed: '+(err.message||err),true)}t.value=''}
+  if(t.matches('[data-cas]')){const s=S.staff.find(x=>x.id===t.dataset.cas);if(s){s.casual=t.checked;save();render()}}
+  if(t.matches('[data-jcid]')){collectJob();renderJobSheet()}
+});
+
+/* ---------- xlsx import (reads the template; no libraries) ---------- */
+async function unzip(buf){
+  const u=new Uint8Array(buf),dv=new DataView(buf);let e=u.length-22;while(e>=0&&dv.getUint32(e,true)!==0x06054b50)e--;if(e<0)throw new Error('Not an .xlsx file');
+  const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);const out={},td=new TextDecoder();
+  for(let i=0;i<n;i++){if(dv.getUint32(p,true)!==0x02014b50)break;const method=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),nl=dv.getUint16(p+28,true),el=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),lo=dv.getUint32(p+42,true),name=td.decode(u.subarray(p+46,p+46+nl));
+    const ls=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true),raw=u.subarray(ls,ls+cs);
+    out[name]=method===0?raw:new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());p+=46+nl+el+cl}
+  return out}
+async function readXlsx(file){
+  const z=await unzip(await file.arrayBuffer()),td=new TextDecoder(),xml=n=>z[n]?new DOMParser().parseFromString(td.decode(z[n]),'text/xml'):null;
+  const ss=[];const sx=xml('xl/sharedStrings.xml');if(sx)for(const si of sx.getElementsByTagName('si'))ss.push([...si.getElementsByTagName('t')].map(x=>x.textContent).join(''));
+  const wb=xml('xl/workbook.xml'),rels=xml('xl/_rels/workbook.xml.rels'),map={};for(const r of rels.getElementsByTagName('Relationship'))map[r.getAttribute('Id')]=r.getAttribute('Target');
+  const sheets={};
+  for(const s of wb.getElementsByTagName('sheet')){const rid=s.getAttribute('r:id')||s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');let tg=map[rid]||'';tg=tg.replace(/^\//,'');const path=tg.startsWith('xl/')?tg:'xl/'+tg,doc=xml(path);if(!doc)continue;const rows=[];
+    for(const c of doc.getElementsByTagName('c')){const ref=c.getAttribute('r'),m=ref.match(/^([A-Z]+)(\d+)$/);if(!m)continue;let col=0;for(const ch of m[1])col=col*26+ch.charCodeAt(0)-64;col--;const ri=+m[2]-1,t=c.getAttribute('t'),v=c.getElementsByTagName('v')[0];let val=null;
+      if(t==='s'&&v)val=ss[+v.textContent];else if(t==='inlineStr')val=[...c.getElementsByTagName('t')].map(x=>x.textContent).join('');else if(v)val=t==='str'||t==='e'?v.textContent:(t==='b'?v.textContent==='1':parseFloat(v.textContent));
+      if(val===null||val==='')continue;(rows[ri]=rows[ri]||[])[col]=val}
+    sheets[s.getAttribute('name')]=rows}
+  return sheets}
+const yn=v=>/^(y|yes|true|1)$/i.test(String(v==null?'':v).trim());
+const cleanPO=v=>String(v==null?'':v).replace(/^\s*po\s*:\s*/i,'').replace(/^\s*po\s+/i,'').trim();
+async function importWorkbook(file){
+  const sh=await readXlsx(file),log=[];
+  const rowsOf=(name,key)=>{const k=Object.keys(sh).find(x=>norm(x)===norm(name));if(!k)return null;const rs=sh[k].filter(Boolean);const hi=rs.findIndex(r=>r.some(c=>norm(c)===norm(key)));if(hi<0)return null;const h=rs[hi].map(norm);return rs.slice(hi+1).map(r=>({get:l=>{const i=h.indexOf(norm(l));return i<0?undefined:r[i]},has:l=>h.indexOf(norm(l))>=0}))};
+  const cr=rowsOf('Contracts','Contract / job name');
+  if(cr){
+    const byKey=new Map();
+    for(const r of cr){const name=String(r.get('Contract / job name')||'').trim(),po=cleanPO(r.get('PO'));if(!name&&!po)continue;
+      const key=po?'po:'+norm(po):'nm:'+norm(name);let g=byKey.get(key);
+      const q=MN.map(m=>num(r.get('Quoted hrs '+m))),s=MN.map(m=>num(r.get('Hrs spent '+m)));
+      const al=String(r.get('Other names (workflow / schedule shorthand)')||'').split(';').map(x=>x.trim()).filter(Boolean);
+      if(!g){g={name,po,client:'',aliases:[],rate:0,gst:false,pia:false,value:0,q:Array(12).fill(0),sp:Array(12).fill(0),narr:'',notes:''};byKey.set(key,g)}else if(name&&name!==g.name)g.aliases.push(name);
+      g.aliases.push(...al);g.client=g.client||String(r.get('Client')||'').trim();g.rate=g.rate||num(r.get('Rate $/hr (ex GST)'));g.gst=g.gst||yn(r.get('GST (Y/N)'));g.pia=g.pia||yn(r.get('Paid in advance (Y/N)'));g.value=g.value||num(r.get('Contract value $'));
+      g.q=g.q.map((x,i)=>x+q[i]);g.sp=g.sp.map((x,i)=>x+s[i]);g.narr=g.narr||String(r.get('Invoice narration')||'');g.notes=g.notes||String(r.get('Notes')||'')}
+    let nNew=0,nUpd=0;
+    for(const g of byKey.values()){g.aliases=[...new Set(g.aliases.filter(a=>a&&norm(a)!==norm(g.name)))];let c=(g.po&&S.contracts.find(x=>norm(x.po)===norm(g.po)))||S.contracts.find(x=>!g.po&&norm(x.name)===norm(g.name));
+      if(c){Object.assign(c,g);delete c.auto;nUpd++}else{S.contracts.push({id:uid(),...g});nNew++}}
+    log.push(`${nNew} new and ${nUpd} updated contracts`)}
+  const sr=rowsOf('Staff','Name');if(sr){let n=0;for(const r of sr){const nm=String(r.get('Name')||'').trim();if(!nm)continue;const s=S.staff.find(x=>norm(x.name)===norm(nm));if(s){s.casual=yn(r.get('Casual (Y/N)'));n++}}log.push(n+' staff flags')}
+  const dr=rowsOf('Non-working days','Date');if(dr){const out=[];for(const r of dr){const d=String(r.get('Date')||'').trim();if(/^\d{4}-\d{2}-\d{2}$/.test(d))out.push({d,n:String(r.get('Name')||'')})}if(out.length){cfg().daysOff=out;log.push(out.length+' non-working days')}}
+  save();FYM().forEach(m=>S.contracts.forEach(c=>{if(hoursIn(c,m))syncInvoice(c,m)}));render();toast('Imported: '+(log.join(', ')||'nothing found — check the sheet names'))}
+
+/* =====================================================================
+   Shared data via OneDrive (one small JSON file per record):
+   To Do tasks, scheduled jobs, contracts, daily hours, other amounts, settings.
+   Phones signed in to the same Microsoft account share it. Staff are matched by NAME.
+   Deleting a record writes a "deleted" marker file; nothing is ever deleted from OneDrive.
+   ===================================================================== */
 function staffIdByName(n){const k=String(n).trim().toLowerCase();let s=S.staff.find(x=>x.name.trim().toLowerCase()===k);
   if(!s){s={id:uid(),name:String(n).trim(),role:'',color:STAFF_COLORS[S.staff.length%STAFF_COLORS.length]};S.staff.push(s)}return s.id}
+const staffNameOf=id=>{const s=staffById(id);return s?s.name:''};
 function listIdByName(n){if(!n)return S.lists[0]?S.lists[0].id:'';let l=S.lists.find(x=>x.name.toLowerCase()===n.toLowerCase());if(!l){l={id:uid(),name:n};S.lists.push(l)}return l.id}
-function tsPack(t){const o=Object.assign({},t);o.staffNames=(t.staff||[]).map(id=>{const s=staffById(id);return s?s.name:''}).filter(Boolean);
+function tsPack(t){const o=Object.assign({},t);o.staffNames=(t.staff||[]).map(staffNameOf).filter(Boolean);
   const l=S.lists.find(x=>x.id===t.list);o.listName=l?l.name:'';delete o.staff;delete o.list;return o}
 function tsUnpack(r){const t=Object.assign({},r);t.staff=(r.staffNames||[]).map(staffIdByName);t.list=listIdByName(r.listName);delete t.staffNames;delete t.listName;return t}
-const tsHash=t=>{const o=tsPack(t);delete o.u;return hash(JSON.stringify(o))};
+function jobPack(j){const o=JSON.parse(JSON.stringify(j));o.staffNames=(j.staff||[]).map(staffNameOf).filter(Boolean);delete o.staff;
+  for(const [d,x] of Object.entries(o.exc||{}))if(x&&x.staff){x.staffNames=x.staff.map(staffNameOf).filter(Boolean);delete x.staff}return o}
+function jobUnpack(r){const o=JSON.parse(JSON.stringify(r));o.staff=(r.staffNames||[]).map(staffIdByName);delete o.staffNames;
+  for(const x of Object.values(o.exc||{}))if(x&&x.staffNames){x.staff=x.staffNames.map(staffIdByName);delete x.staffNames}return o}
+const SYNCS=[
+  {key:'tasks',dir:'sync/tasks',meta:'ks_ts_meta',pack:tsPack,unpack:tsUnpack,skip:id=>/^t[123]$/.test(id),notify:true},
+  {key:'jobs',dir:'sync/jobs',pack:jobPack,unpack:jobUnpack,skip:id=>/^j[1-4]$/.test(id)},
+  {key:'contracts',dir:'sync/contracts'},{key:'hlog',dir:'sync/hours'},{key:'other',dir:'sync/other'},{key:'cfg',dir:'sync/cfg'}];
+const sfn=id=>String(id).replace(/[^\w\-]+/g,'_')+'.json';
+async function syncColl(sc,mine){
+  const m=lsj(sc.meta||'ks_sync_'+sc.key,{h:{},seen:{}}),pack=sc.pack||(x=>JSON.parse(JSON.stringify(x))),unpack=sc.unpack||(x=>JSON.parse(JSON.stringify(x))),skip=sc.skip||(()=>false),me=meId();
+  const hs=x=>{const o=pack(x);delete o.u;return hash(JSON.stringify(o))};let changed=false;S[sc.key]=S[sc.key]||[];
+  const remote=[];let url=`${OD_G}:/${sc.dir}:/children?$top=500&$select=name,id,lastModifiedDateTime,@microsoft.graph.downloadUrl`;
+  while(url){const r=await odFetch(url);if(r.status===404)break;if(!r.ok)throw new Error('Sync failed ('+r.status+')');const j=await r.json();remote.push(...(j.value||[]));url=j['@odata.nextLink']||''}
+  for(const f of remote){
+    if(!/\.json$/.test(f.name)||m.seen[f.name]===f.lastModifiedDateTime)continue;
+    const rec=await (await odGet(f)).json();m.seen[f.name]=f.lastModifiedDateTime;if(!rec||!rec.id||skip(rec.id))continue;
+    const arr=S[sc.key],loc=arr.find(x=>x.id===rec.id);
+    if(rec.deleted){if(loc&&(rec.u||0)>=(loc.u||0)){S[sc.key]=arr.filter(x=>x.id!==rec.id);delete m.h[rec.id];changed=true}continue}
+    if(loc&&(loc.u||0)>=(rec.u||0))continue;
+    const t=unpack(rec);if(loc)arr[arr.indexOf(loc)]=t;else arr.unshift(t);m.h[t.id]=hs(t);changed=true;
+    if(sc.notify&&me&&t.staff.includes(me)&&!t.done&&!(loc&&loc.staff.includes(me)))mine.push(t.title);
+  }
+  const have=new Set();
+  for(const t of S[sc.key]){if(skip(t.id))continue;have.add(t.id);const h=hs(t);
+    if(m.h[t.id]!==h){t.u=Date.now();m.h[t.id]=h;const resp=await odPut(`${sc.dir}/${sfn(t.id)}`,jblob(pack(t)));if(resp&&resp.lastModifiedDateTime)m.seen[sfn(t.id)]=resp.lastModifiedDateTime;changed=true}}
+  for(const id of Object.keys(m.h)){if(have.has(id))continue;delete m.h[id];
+    const resp=await odPut(`${sc.dir}/${sfn(id)}`,jblob({id,deleted:true,u:Date.now()}));if(resp&&resp.lastModifiedDateTime)m.seen[sfn(id)]=resp.lastModifiedDateTime}
+  lss(sc.meta||'ks_sync_'+sc.key,m);return changed}
 let tsBusy=false,tsTimer=null;
 async function tsSync(manual){
-  if(tsBusy||!odConnected()||!navigator.onLine)return;tsBusy=true;
-  try{
-    const m=tsMeta(),me=meId(),mine=[];let changed=false;
-    /* pull */
-    const remote=[];let url=`${OD_G}:/${TS_DIR}:/children?$top=200&$select=name,id,lastModifiedDateTime,@microsoft.graph.downloadUrl`;
-    while(url){const r=await odFetch(url);if(r.status===404)break;if(!r.ok)throw new Error('Sync failed ('+r.status+')');const j=await r.json();remote.push(...(j.value||[]));url=j['@odata.nextLink']||''}
-    for(const f of remote){
-      if(!/\.json$/.test(f.name)||m.seen[f.name]===f.lastModifiedDateTime)continue;
-      const rec=await (await odGet(f)).json();m.seen[f.name]=f.lastModifiedDateTime;if(!rec||!rec.id||tsSkip(rec.id))continue;
-      const loc=S.tasks.find(x=>x.id===rec.id);
-      if(rec.deleted){if(loc&&(rec.u||0)>=(loc.u||0)){S.tasks=S.tasks.filter(x=>x.id!==rec.id);delete m.h[rec.id];changed=true}continue}
-      if(loc&&(loc.u||0)>=(rec.u||0))continue;
-      const t=tsUnpack(rec);if(loc)S.tasks[S.tasks.indexOf(loc)]=t;else S.tasks.unshift(t);
-      m.h[t.id]=tsHash(t);changed=true;
-      if(me&&t.staff.includes(me)&&!t.done&&!(loc&&loc.staff.includes(me)))mine.push(t.title);
-    }
-    /* push */
-    const have=new Set();
-    for(const t of S.tasks){
-      if(tsSkip(t.id))continue;have.add(t.id);const h=tsHash(t);
-      if(m.h[t.id]!==h){t.u=Date.now();m.h[t.id]=h;const resp=await odPut(`${TS_DIR}/${t.id}.json`,jblob(tsPack(t)));if(resp&&resp.lastModifiedDateTime)m.seen[t.id+'.json']=resp.lastModifiedDateTime;changed=true}
-    }
-    for(const id of Object.keys(m.h)){
-      if(have.has(id))continue;delete m.h[id];
-      const resp=await odPut(`${TS_DIR}/${id}.json`,jblob({id,deleted:true,u:Date.now()}));if(resp&&resp.lastModifiedDateTime)m.seen[id+'.json']=resp.lastModifiedDateTime;
-    }
-    lss('ks_ts_meta',m);
-    if(changed){save();render()}
-    if(mine.length)toast(mine.length===1?'New task for you: '+mine[0]:mine.length+' new tasks for you',false);
-    else if(manual)toast('To Do list is up to date');
-  }catch(e){if(manual)toast('To Do sync: '+(e.message||e),true)}
+  if(tsBusy||!odConnected()||!navigator.onLine)return;tsBusy=true;let changed=false,err='';const mine=[];
+  for(const sc of SYNCS){try{if(await syncColl(sc,mine))changed=true}catch(e){err=err||String(e.message||e)}}
+  if(changed){save();render()}
+  if(mine.length)toast(mine.length===1?'New task for you: '+mine[0]:mine.length+' new tasks for you',false);
+  else if(err&&manual)toast('Sync: '+err,true);else if(manual)toast('Everything is up to date');
   tsBusy=false;
 }
 function tsSchedule(){if(!odConnected())return;clearTimeout(tsTimer);tsTimer=setTimeout(()=>tsSync(false),4000)}
